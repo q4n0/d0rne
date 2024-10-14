@@ -1,6 +1,10 @@
-requests
+aiohttp
+aiofiles
 colorama
 libtorrent
 tqdm
 appdirs
 packaging
+yarl
+aiohttp-socks
+requests

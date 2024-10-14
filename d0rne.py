@@ -21,6 +21,9 @@ import configparser
 import importlib.util
 import queue
 import concurrent.futures
+import subprocess
+import threading
+import itertools
 
 # Initialize colorama
 init(autoreset=True)
@@ -29,6 +32,7 @@ init(autoreset=True)
 logging.basicConfig(filename='d0rne.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
+# Constants
 D0RNE_BANNER = f"""{Fore.CYAN}
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⢀⣾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣰⣿⣿⣿⣿⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -54,6 +58,7 @@ WEBSITE_DOWN_ASCII = f"{Fore.RED}[OFFLINE] Website is DOWN!"
 DOWNLOAD_ASCII = f"{Fore.BLUE}[DOWNLOAD] Starting download..."
 FTP_ASCII = f"{Fore.MAGENTA}[FTP] Connecting to FTP server..."
 
+# Classes
 class ConnectionPool:
     def __init__(self, limit=100, force_close=False, enable_cleanup_closed=True):
         self.connector = TCPConnector(
@@ -76,6 +81,66 @@ class ConnectionPool:
         if self.session and not self.session.closed:
             await self.session.close()
         await self.connector.close()
+
+class RateLimiter:
+    def __init__(self, rate_limit):
+        self.rate_limit = rate_limit
+        self.tokens = rate_limit
+        self.updated_at = time.monotonic()
+        self.lock = asyncio.Lock()
+
+    async def acquire(self, size):
+        async with self.lock:
+            now = time.monotonic()
+            time_passed = now - self.updated_at
+            self.tokens = min(self.rate_limit, self.tokens + time_passed * self.rate_limit)
+            self.updated_at = now
+
+            if size > self.tokens:
+                await asyncio.sleep((size - self.tokens) / self.rate_limit)
+                self.tokens = 0
+            else:
+                self.tokens -= size
+
+class PluginManager:
+    def __init__(self):
+        self.plugins = {}
+
+    def load_plugin(self, plugin_name):
+        plugin_path = f"plugins/{plugin_name}.py"
+        spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.plugins[plugin_name] = module
+
+    def get_plugin(self, plugin_name):
+        return self.plugins.get(plugin_name)
+
+class Loader:
+    def __init__(self, desc="Loading...", end="Done!", timeout=0.1):
+        self.desc = desc
+        self.end = end
+        self.timeout = timeout
+        self._thread = None
+        self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+        self.done = False
+
+    def start(self):
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+        self._thread.start()
+
+    def _animate(self):
+        for c in itertools.cycle(self.steps):
+            if self.done:
+                break
+            print(f"\r{self.desc} {c}", flush=True, end="")
+            time.sleep(self.timeout)
+
+    def stop(self):
+        self.done = True
+        if self._thread is not None:
+            self._thread.join()
+        print(f"\r{self.end}", flush=True)
 
 connection_pool = ConnectionPool()
 
@@ -189,6 +254,46 @@ async def check_for_updates():
     else:
         print(f"{Fore.GREEN}You are running the latest version of d0rne ({current_version}).{Style.RESET_ALL}")
 
+def load_config():
+    config = configparser.ConfigParser()
+    config_path = os.path.join(appdirs.user_config_dir("d0rne"), "config.ini")
+    
+    if os.path.exists(config_path):
+        config.read(config_path)
+        return config
+    else:
+        return configparser.ConfigParser()
+
+def save_config(config):
+    config_dir = appdirs.user_config_dir("d0rne")
+    os.makedirs(config_dir, exist_ok=True)
+    config_path = os.path.join(config_dir, "config.ini")
+    with open(config_path, 'w') as configfile:
+        config.write(configfile)
+
+def print_banner():
+    print(D0RNE_BANNER)
+
+def create_progress_bar(percentage, width=50):
+    filled_width = int(width * percentage // 100)
+    bar = '█' * filled_width + '-' * (width - filled_width)
+    return f"[{bar}] {percentage:.1f}%"
+
+def parse_wget_output(line):
+    progress_regex = r'(\d+)%\s+[\w.]+\s+([\d.]+\w)\s+([\d.]+\s*\w)/s(?:\s+eta\s+([\w\s]+))?'
+    match = re.search(progress_regex, line)
+    if match:
+        percentage = float(match.group(1))
+        downloaded = match.group(2)
+        speed = match.group(3)
+        eta = match.group(4) or "Unknown"
+        return percentage, downloaded, speed, eta
+    return None
+
+def get_user_input(prompt, default=None):
+    user_input = input(f"{Fore.YELLOW}{prompt}{Fore.RESET}")
+    return user_input if user_input else default
+
 def animated_exit():
     frames = [
         "Exiting d0rne |",
@@ -301,7 +406,7 @@ def run_wget(command, show_progress=False, quiet_mode=False):
         with tqdm(total=100, unit="%", bar_format="{l_bar}{bar}| {n:.2f}%", disable=quiet_mode) as pbar:
             while True:
                 output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
+                if output == '' and process.poll() is not
                     break
                 if output:
                     progress_info = parse_wget_output(output)

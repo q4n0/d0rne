@@ -50,7 +50,7 @@ D0RNE_BANNER = f"""{Fore.CYAN}
         d0rne: Your cli Downloader Made by b0urn3 
   GITHUB: https://github.com/q4no | Instagram: onlybyhive 
               | TOOL VERSION: 1.0.2 |
-         -------------------------------------------
+            ----------------------------
 """
 
 WEBSITE_UP_ASCII = f"{Fore.GREEN}[ONLINE] Website is UP and running!"

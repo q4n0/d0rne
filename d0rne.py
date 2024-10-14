@@ -17,13 +17,13 @@ import signal
 import configparser
 import logging
 from tqdm import tqdm
-
-# New imports
 import platform
 import getpass
 import gettext
 import appdirs
 from packaging import version
+import shutil
+import zipfile
 
 # Initialize colorama
 init(autoreset=True)
@@ -32,64 +32,32 @@ init(autoreset=True)
 logging.basicConfig(filename='d0rne.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ASCII art and banners remain unchanged
+# ASCII art and banners
 D0RNE_BANNER = f"""{Fore.CYAN}
-                      .                             .                           
-                    //                             \\\\                          
-                   //                               \\\\                         
-                  //                                 \\\\                        
-                 //                *.*                \\\\                       
-              .---.              .//|\\\\.              .---.                    
-    ________ / .-. \_________..-~ *.-.* ~-..________ / .-. \\_________ -sr      
-             \\ ~-~ /   /H-     `-=.___.=-'     -H\\   \\ ~-~ /                   
-               ~~~    / H          [H]          H \\    ~~~                     
-                     / *H*         *H*         *H* \\                           
-                       UUU         UUU         UUU
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⢀⣾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣰⣿⣿⣿⣿⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣷⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⣸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⡿⠿⢿⣿⣿⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⢼⡟⠉⣻⣿⣿⡏⠰⣷⠀⢹⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⢻⣷⡀⠙⣻⣿⣿⣄⣠⣴⡿⠋⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⣭⣉⣛⣻⣿⣿⣿⣿⣿⣿⣿⣶⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⢠⠞⢡⣽⣿⣿⠿⢻⣿⣿⣿⣏⣿⣿⣿⣧⣤⣤⣤⣄⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠘⣴⡨⠛⠋⠁⠀⣼⣿⣿⣿⡟⣿⣿⣿⣿⣯⢈⣿⣿⠂⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠘⠃⠀⠀⠀⢀⣤⣿⣷⡜⣿⣧⡉⠉⠙⠋⠁⠈⠉⠁⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠁⢠⣾⣿⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 {Fore.YELLOW}
-          d0rne: Your cli Downloader Made by b0urn3 
-        GITHUB:github.com/q4no | Instagram:onlybyhive 
-        -------------------------------------------
+    d0rne: Your cli Downloader Made by b0urn3 
+  GITHUB:github.com/q4no | Instagram:onlybyhive 
+    TOOL VERSION: 1.0.2
+  -------------------------------------------
 """
 
-WEBSITE_UP_ASCII = f"""{Fore.GREEN}
-   ____ _____  _  _____ _   _ ____  
-  / ___|_   _|/ \|_   _| | | / ___| 
-  \___ \ | | / _ \ | | | | | \___ \ 
-   ___) || |/ ___ \| | | |_| |___) |
-  |____/ |_/_/   \_\_|  \___/|____/ 
-                                    
-     Website is UP and running!
-"""
+WEBSITE_UP_ASCII = f"{Fore.GREEN}[ONLINE] Website is UP and running!"
+WEBSITE_DOWN_ASCII = f"{Fore.RED}[OFFLINE] Website is DOWN!"
+DOWNLOAD_ASCII = f"{Fore.BLUE}[DOWNLOAD] Starting download..."
+FTP_ASCII = f"{Fore.MAGENTA}[FTP] Connecting to FTP server..."
 
-WEBSITE_DOWN_ASCII = f"""{Fore.RED}
-   ____  _____    _    ____  
-  |  _ \| ____|  / \  |  _ \ 
-  | | | |  _|   / _ \ | | | |
-  | |_| | |___ / ___ \| |_| |
-  |____/|_____/_/   \_\____/ 
-                             
-    Website is DOWN! :(
-"""
-
-DOWNLOAD_ASCII = f"""{Fore.BLUE}
-   ____                      _                 _ 
-  |  _ \  _____      ___ __ | | ___   __ _  __| |
-  | | | |/ _ \ \ /\ / / '_ \| |/ _ \ / _` |/ _` |
-  | |_| | (_) \ V  V /| | | | | (_) | (_| | (_| |
-  |____/ \___/ \_/\_/ |_| |_|_|\___/ \__,_|\__,_|
-                                                 
-"""
-
-FTP_ASCII = f"""{Fore.MAGENTA}
-   _____ _____ ____  
-  |  ___|_   _|  _ \ 
-  | |_    | | | |_) |
-  |  _|   | | |  __/ 
-  |_|     |_| |_|    
-                     
-"""
-
-# New function for localization
 def setup_localization():
     locales_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "locales")
     lang = gettext.translation("d0rne", locales_dir, fallback=True)
@@ -98,7 +66,6 @@ def setup_localization():
 
 _ = setup_localization()
 
-# New configuration functions
 def get_config_path():
     config_dir = appdirs.user_config_dir("d0rne")
     return os.path.join(config_dir, "config")
@@ -116,7 +83,6 @@ def save_config(config):
     with open(config_file, 'w') as f:
         config.write(f)
 
-# New safe_execute function
 def safe_execute(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -132,16 +98,103 @@ def safe_execute(func, *args, **kwargs):
         print(f"{Fore.RED}{_('An unexpected error occurred')}: {e}")
     return None
 
-# New function to check for updates
-def check_for_updates(current_version):
+def get_latest_version():
     try:
-        response = requests.get("https://api.github.com/repos/q4no/d0rne/releases/latest")
-        response.raise_for_status()
-        latest_version = response.json()["tag_name"]
-        if version.parse(latest_version) > version.parse(current_version):
-            print(f"{Fore.YELLOW}{_('A new version')} ({latest_version}) {_('is available. Please update.')}")
-    except requests.RequestException as e:
-        print(f"{Fore.RED}{_('Failed to check for updates')}: {e}")
+        response = requests.get("https://api.github.com/repos/q4no/d0rne/releases/latest", timeout=5)
+        return response.json()["tag_name"]
+    except Exception as e:
+        print(f"{Fore.RED}Failed to fetch latest version: {e}{Style.RESET_ALL}")
+        return None
+
+def self_update():
+    current_version = "1.0.2"  # Update this with your current version
+    latest_version = get_latest_version()
+
+    if latest_version is None:
+        return False
+
+    if version.parse(latest_version) <= version.parse(current_version):
+        print(f"{Fore.GREEN}You are already running the latest version ({current_version}).{Style.RESET_ALL}")
+        return True
+
+    print(f"{Fore.YELLOW}Updating d0rne from version {current_version} to {latest_version}...{Style.RESET_ALL}")
+
+    url = f"https://github.com/q4no/d0rne/archive/{latest_version}.zip"
+    zip_path = "d0rne_latest.zip"
+
+    try:
+        with requests.get(url, stream=True) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+
+            with open(zip_path, 'wb') as file, tqdm(
+                desc="Downloading update",
+                total=total_size,
+                unit='iB',
+                unit_scale=True,
+                unit_divisor=1024,
+            ) as pbar:
+                for data in response.iter_content(chunk_size=8192):
+                    size = file.write(data)
+                    pbar.update(size)
+
+        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+            zip_ref.extractall("d0rne_update")
+
+        new_script_path = f"d0rne_update/d0rne-{latest_version}/d0rne.py"
+        current_script_path = os.path.abspath(__file__)
+        shutil.move(new_script_path, current_script_path)
+
+        os.remove(zip_path)
+        shutil.rmtree("d0rne_update")
+
+        print(f"{Fore.GREEN}Update completed successfully. Please restart d0rne.{Style.RESET_ALL}")
+        return True
+
+    except Exception as e:
+        print(f"{Fore.RED}Update failed: {e}{Style.RESET_ALL}")
+        return False
+
+def check_for_updates():
+    current_version = "1.0.2"
+    latest_version = get_latest_version()
+
+    if latest_version is None:
+        return
+
+    if version.parse(latest_version) > version.parse(current_version):
+        print(f"{Fore.YELLOW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
+        print(f"{Fore.YELLOW}┃ {Fore.GREEN}A new version of d0rne is available!              {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Current version: {current_version}                         {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Latest version: {latest_version}                          {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Run 'd0rne.py --update' to update automatically   {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛{Style.RESET_ALL}")
+    else:
+        print(f"{Fore.GREEN}You are running the latest version of d0rne ({current_version}).{Style.RESET_ALL}")
+
+def animated_exit():
+    frames = [
+        "Exiting d0rne |",
+        "Exiting d0rne /",
+        "Exiting d0rne -",
+        "Exiting d0rne \\",
+    ]
+    for _ in range(10):  # Show animation for about 1 second
+        for frame in frames:
+            sys.stdout.write(f'\r{Fore.YELLOW}{frame}{Style.RESET_ALL}')
+            sys.stdout.flush()
+            time.sleep(0.1)
+    
+    sys.stdout.write('\r' + ' ' * 20 + '\r')  # Clear the line
+    print(f"{Fore.GREEN}Thanks for using d0rne! Goodbye!{Style.RESET_ALL}")
+
+def ctrl_c_handler(signum, frame):
+    print()  # Move to a new line
+    animated_exit()
+    sys.exit(0)
+
+# Register the CTRL+C handler
+signal.signal(signal.SIGINT, ctrl_c_handler)
 
 class Loader:
     def __init__(self, desc="Loading...", end="Done!", timeout=0.1):
@@ -188,7 +241,6 @@ def parse_wget_output(line):
         return percentage, downloaded, speed, eta
     return None
 
-# Modified download_file function
 def download_file(url, output, quiet_mode=False):
     if platform.system() == "Windows":
         try:
@@ -218,12 +270,11 @@ def download_file(url, output, quiet_mode=False):
             else:
                 wget_cmd.extend(["--progress=bar:force", "--show-progress"])
             subprocess.run(wget_cmd, check=True)
-        except subprocess.CalledProcessError as e:
+       except subprocess.CalledProcessError as e:
             print(f"{Fore.RED}{_('Error downloading file')}: {e}")
             return False
     return True
 
-# Modified run_wget function
 def run_wget(command, show_progress=False, quiet_mode=False):
     loader = Loader(_("Preparing download..."), _("Download preparation complete."))
     loader.start()
@@ -267,7 +318,6 @@ def run_wget(command, show_progress=False, quiet_mode=False):
         if loader.done == False:
             loader.stop()
 
-# Modified download_with_retry function
 def download_with_retry(url, output=None, resume=False, user_agent=None, retry_attempts=3, retry_delay=5, quiet_mode=False, proxy=None, limit_rate=None):
     print(DOWNLOAD_ASCII)
     command = ["wget", "--progress=bar:force"]
@@ -306,9 +356,8 @@ def get_user_input(prompt, default=None):
     user_input = input(f"{Fore.YELLOW}{prompt}{Fore.RESET}")
     return user_input if user_input else default
 
-# Modified download_torrent function
 def download_torrent(torrent_path, save_path='.'):
-    print(TORRENT_ASCII)
+    print(FTP_ASCII)
     ses = lt.session()
     params = {
         'save_path': save_path,
@@ -357,9 +406,9 @@ def download_torrent(torrent_path, save_path='.'):
         ses.remove_torrent(handle)
 
 def multiple_downloads():
-    download_queue = DownloadQueue()
+    download_queue = queue.Queue()
     while True:
-        print(f"\n{Fore.CYAN}{_('Current download queue')}: {download_queue.queue.qsize()} {_('item(s)')}")
+        print(f"\n{Fore.CYAN}{_('Current download queue')}: {download_queue.qsize()} {_('item(s)')}")
         choice = get_user_input(_("Add a download (y/n) or start processing queue (s): ")).lower()
         
         if choice == 'y':
@@ -369,20 +418,23 @@ def multiple_downloads():
             user_agent = get_user_input(_("Enter user agent (leave blank for default): "))
             quiet_mode = get_user_input(_("Use quiet mode? (y/n): ")).lower() == 'y'
             
-            download_queue.add_download(download_with_retry, url, output, resume, user_agent, quiet_mode=quiet_mode)
+            download_queue.put((download_with_retry, (url, output, resume, user_agent), {'quiet_mode': quiet_mode}))
             print(f"{Fore.GREEN}{_('Download added to queue.')}")
         
         elif choice == 's':
-            if download_queue.queue.empty():
+            if download_queue.empty():
                 print(f"{Fore.YELLOW}{_('Queue is empty. Add some downloads first.')}")
             else:
                 print(f"{Fore.GREEN}{_('Processing download queue...')}")
-                download_queue.process_queue()
+                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+                    while not download_queue.empty():
+                        func, args, kwargs = download_queue.get()
+                        executor.submit(func, *args, **kwargs)
                 print(f"{Fore.GREEN}{_('All downloads completed.')}")
             break
         
         elif choice == 'n':
-            if not download_queue.queue.empty():
+            if not download_queue.empty():
                 confirm = get_user_input(_("Queue is not empty. Are you sure you want to exit? (y/n): ")).lower()
                 if confirm == 'y':
                     break
@@ -471,8 +523,13 @@ def main():
     parser.add_argument("--proxy", help=_("Set proxy server (e.g., http://proxy:port)"))
     parser.add_argument("--limit-rate", help=_("Limit download speed (e.g., 500k)"))
     parser.add_argument("--no-color", action="store_true", help=_("Disable colored output"))
+    parser.add_argument("--update", action="store_true", help=_("Update d0rne to the latest version"))
 
     args = parser.parse_args()
+
+    if args.update:
+        self_update()
+        return
 
     config = load_config()
     if config:
@@ -483,13 +540,13 @@ def main():
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)
         if not args.proxy:
             args.proxy = config.get('DEFAULT', 'proxy', fallback=None)
-        if not args.limit_rate:
+       if not args.limit_rate:
             args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
     
     if args.no_color:
         init(strip=True, convert=False)
     
-    check_for_updates("1.0.2")  
+    check_for_updates()
 
     if args.url:
         print_banner()
@@ -507,4 +564,8 @@ def main():
         safe_execute(interactive_mode)
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print()  
+        animated_exit()

@@ -546,8 +546,6 @@ async def async_main():
 
     args = parser.parse_args()
 
-      args = parser.parse_args()
-
     if args.update:
         await self_update()
         return

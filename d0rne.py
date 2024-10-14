@@ -269,7 +269,7 @@ def download_file(url, output, quiet_mode=False):
                 total=total_size,
                 unit='iB',
                 unit_scale=True,
-                unit_divisor=1024
+                unit_divisor=1024,
                 disable=quiet_mode
              ) as progress_bar:
                  for data in response.iter_content(block_size):

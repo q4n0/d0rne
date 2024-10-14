@@ -78,7 +78,8 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 
 Run d0rne in interactive mode:
 ```
-python3 d0rne.py
+python3 d0rne.py 
+linux: sudo python3 d0rne.py
 ```
 Follow the on-screen menu to choose your download option.
 
@@ -87,26 +88,33 @@ Follow the on-screen menu to choose your download option.
 1. Download a file:
    ```
    python3 d0rne.py "https://example.com/file.zip" -o output.zip
+   linux: sudo python3 d0rne.py "https://example.com/file.zip" -o output.zip
+
    ```
 
 2. Download a website:
    ```
    python3 d0rne.py "https://example.com" -w -d 2
+   linux: sudo '''
+
    ```
 
 3. Download from FTP:
    ```
    python3 d0rne.py "ftp://example.com/file.txt" --ftp-user username --ftp-pass password
+   linux: sudo python3 """""'
    ```
 
 4. Download a torrent:
    ```
    python3 d0rne.py "path/to/torrent/file.torrent" -t
+   linux: sudo python3 """ 
    ```
 
 5. Check website status:
    ```
    python3 d0rne.py "https://example.com" --check
+   linux: sudo python3 """  
    ```
 
 6. Multiple downloads (interactive mode only):

@@ -1,4 +1,4 @@
-#d0rne: Your CLI Downloader
+## d0rne: Your CLI Downloader
 
 d0rne is a versatile command-line downloader tool created by b0urn3. It supports various download types including single files, websites, FTP, torrents, and now features multiple concurrent downloads.
 

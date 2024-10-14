@@ -1,0 +1,6 @@
+requests
+colorama
+python-libtorrent
+tqdm
+appdirs
+packaging

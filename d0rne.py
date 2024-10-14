@@ -489,7 +489,46 @@ def print_menu():
 """
     print(menu)
 
-def interactive_mode():
+async def multiple_downloads():
+    download_queue = []
+    while True:
+        print(f"\n{Fore.CYAN}Current download queue: {len(download_queue)} item(s)")
+        choice = get_user_input("Add a download (y/n) or start processing queue (s): ").lower()
+        
+        if choice == 'y':
+            url = get_user_input("Enter the URL to download: ")
+            output = get_user_input("Enter output filename (leave blank for default): ")
+            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
+            user_agent = get_user_input("Enter user agent (leave blank for default): ")
+            proxy = get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: ")
+            limit_rate = get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
+            
+            download_queue.append((url, output, resume, user_agent, proxy, limit_rate))
+            print(f"{Fore.GREEN}Download added to queue.")
+        
+        elif choice == 's':
+            if not download_queue:
+                print(f"{Fore.YELLOW}Queue is empty. Add some downloads first.")
+            else:
+                print(f"{Fore.GREEN}Processing download queue...")
+                for url, output, resume, user_agent, proxy, limit_rate in download_queue:
+                    await download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate)
+                download_queue.clear()
+                print(f"{Fore.GREEN}All downloads completed.")
+            break
+        
+        elif choice == 'n':
+            if download_queue:
+                confirm = get_user_input("Queue is not empty. Are you sure you want to exit? (y/n): ").lower()
+                if confirm == 'y':
+                    break
+            else:
+                break
+        
+        else:
+            print(f"{Fore.RED}Invalid choice. Please enter 'y', 'n', or 's'.")
+
+async def interactive_mode():
     print_banner()
     config = load_config()
     while True:
@@ -503,14 +542,33 @@ def interactive_mode():
             user_agent = get_user_input("Enter user agent (leave blank for default): ")
             proxy = get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: ")
             limit_rate = get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
-            asyncio.run(download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate))
+            await download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate)
         elif choice == '2':
             url = get_user_input("Enter the URL to download: ")
             output = get_user_input("Enter output filename (leave blank for default): ")
             resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
             user_agent = get_user_input("Enter user agent (leave blank for default): ")
-            asyncio.run(download_with_retry(url, output, resume, user_agent, quiet_mode=True))
-        # ... (implement other menu options)
+            await download_with_retry(url, output, resume, user_agent, quiet_mode=True)
+        elif choice == '3':
+            url = get_user_input("Enter the website URL: ")
+            depth = int(get_user_input("Enter depth (default 1): ", "1"))
+            convert_links = get_user_input("Convert links for offline viewing? (y/n): ").lower() == 'y'
+            page_requisites = get_user_input("Download all page requisites? (y/n): ").lower() == 'y'
+            await download_website(url, depth, convert_links, page_requisites)
+        elif choice == '4':
+            url = get_user_input("Enter the FTP URL: ")
+            username = get_user_input("Enter FTP username (leave blank for anonymous): ")
+            password = get_user_input("Enter FTP password (leave blank if not required): ")
+            await download_ftp(url, username, password)
+        elif choice == '5':
+            torrent_path = get_user_input("Enter the torrent file path or magnet link: ")
+            save_path = get_user_input("Enter the save path (leave blank for current directory): ") or '.'
+            await download_torrent(torrent_path, save_path)
+        elif choice == '6':
+            url = get_user_input("Enter the website URL to check: ")
+            await check_website_status(url)
+        elif choice == '7':
+            await multiple_downloads()
         else:
             print(f"{Fore.RED}Invalid choice. Please try again or use CTRL+C to exit.")
 

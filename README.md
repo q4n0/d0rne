@@ -41,7 +41,9 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 
 3. Clone the repository or download `d0rne.py`
 
-4. Install required packages:
+https://github.com/q4n0/d0rne/blob/main/d0rne.py
+
+5. Install required packages:
    ```
    pip3 install colorama requests tqdm appdirs packaging aiohttp aiofiles aiohttp_socks yarl
    ```
@@ -64,8 +66,10 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
    ```
 
 4. Clone the repository or download `d0rne.py`
+   
+https://github.com/q4n0/d0rne/blob/main/d0rne.py
 
-5. Install required packages:
+6. Install required packages:
    ```
    pip3 install colorama requests tqdm appdirs packaging aiohttp aiofiles aiohttp_socks yarl
    ```
@@ -84,6 +88,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
    ```
 
 5. Clone the repository or download `d0rne.py`
+   https://github.com/q4n0/d0rne/blob/main/d0rne.py
 
 ## Usage
 

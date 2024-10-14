@@ -540,7 +540,7 @@ def main():
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)
         if not args.proxy:
             args.proxy = config.get('DEFAULT', 'proxy', fallback=None)
-       if not args.limit_rate:
+        if not args.limit_rate:
             args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
     
     if args.no_color:

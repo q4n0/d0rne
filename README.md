@@ -29,7 +29,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 1. Install Python from [python.org](https://www.python.org/downloads/)
 2. Open Command Prompt and run:
    ```
-   pip install colorama requests libtorrent-python tqdm
+   pip install colorama requests libtorrent tqdm --break-system-packages
    ```
 3. Download `d0rne.py` from the repository
 
@@ -39,7 +39,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
    ```
    sudo apt update
    sudo apt install python3 python3-pip python3-libtorrent
-   pip3 install colorama requests tqdm
+   pip3 install requirements.txt --break-sytem-packages
    ```
 2. Download `d0rne.py` from the repository
 
@@ -48,7 +48,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 1. Open terminal and run:
    ```
    sudo pacman -Syu python python-pip python-libtorrent
-   pip install colorama requests tqdm
+   pip install colorama requests tqdm libtorrent --break-system-packages
    ```
 2. Download `d0rne.py` from the repository
 
@@ -58,7 +58,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
    ```
    sudo dnf update
    sudo dnf install python3 python3-pip python3-libtorrent
-   pip3 install colorama requests tqdm
+   pip3 install colorama requests tqdm libtorrent --break-system-packages
    ```
 2. Download `d0rne.py` from the repository
 
@@ -68,7 +68,7 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
    ```
    pkg update
    pkg install python libtorrent
-   pip install colorama requests tqdm
+   pip install colorama requests tqdm libtorrent
    ```
 2. Download `d0rne.py` from the repository
 

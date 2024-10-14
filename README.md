@@ -159,6 +159,10 @@ Follow the on-screen menu to choose your download option.
 - `--update`: Update d0rne to the latest version
 - `--no-color`: Disable colored output
 
+# d0rne: Your CLI Downloader
+
+[... previous sections remain the same ...]
+
 ## Configuration
 
 d0rne supports configuration files for setting default options. The configuration file locations are:
@@ -166,11 +170,45 @@ d0rne supports configuration files for setting default options. The configuratio
 - Unix-like systems (Linux, macOS): `~/.config/d0rne/config.ini`
 - Windows: `%LOCALAPPDATA%\d0rne\config.ini`
 
-You can set default values for:
-- Output directory
-- User agent
-- Proxy
-- Download speed limit
+### Default Configuration
+
+d0rne comes with the following default configuration:
+
+```ini
+[DEFAULT]
+output_dir = ~/Downloads
+user_agent = d0rne/1.0
+proxy = 
+limit_rate = 
+```
+
+You can modify these defaults by editing the config file or by using command-line arguments, which will override the config file settings for that particular run.
+
+### Customizing Configuration
+
+To customize your configuration:
+
+1. Create the configuration file if it doesn't exist.
+2. Open the file in a text editor.
+3. Modify the values as needed. For example:
+
+```ini
+[DEFAULT]
+output_dir = /path/to/your/preferred/download/directory
+user_agent = YourCustomUserAgent/2.0
+proxy = http://your-proxy-server:port
+limit_rate = 500k
+```
+
+### Configuration Options
+
+- `output_dir`: The default directory where downloads are saved.
+- `user_agent`: The default user agent string used for downloads.
+- `proxy`: The default proxy server to use (if any).
+- `limit_rate`: The default download speed limit.
+
+These settings can be overridden by command-line arguments when running d0rne.
+
 
 ## Logging
 

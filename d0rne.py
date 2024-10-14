@@ -144,7 +144,30 @@ def check_for_updates(current_version):
         print(f"{Fore.RED}{_('Failed to check for updates')}: {e}")
 
 class Loader:
-    # Loader class remains unchanged
+    def __init__(self, desc="Loading...", end="Done!", timeout=0.1):
+        self.desc = desc
+        self.end = end
+        self.timeout = timeout
+        self._thread = None
+        self.steps = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
+        self.done = False
+
+    def start(self):
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+        self._thread.start()
+
+    def _animate(self):
+        for c in itertools.cycle(self.steps):
+            if self.done:
+                break
+            print(f"\r{self.desc} {c}", flush=True, end="")
+            time.sleep(self.timeout)
+
+    def stop(self):
+        self.done = True
+        if self._thread is not None:
+            self._thread.join()
+        print(f"\r{self.end}", flush=True)
 
 def print_banner():
     print(D0RNE_BANNER)

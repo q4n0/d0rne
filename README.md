@@ -25,11 +25,14 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 
 - Python 3.6 or higher
 - pip (Python package manager)
+- python3-libtorrent
 
 ### Installation Steps
 
 1. Clone the repository or download `d0rne.py`
 2. Install the required packages:
+3. For linux  also use
+   sudo apt install python3-libtorrent
 
 ```bash
 pip install colorama requests tqdm python-libtorrent appdirs packaging

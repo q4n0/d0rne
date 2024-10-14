@@ -19,6 +19,7 @@ from tqdm import tqdm
 import appdirs
 from packaging import version
 import configparser
+import importlib.util
 
 # Initialize colorama
 init(autoreset=True)
@@ -150,120 +151,32 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
         print(f"{Fore.RED}{_('Error downloading file')}: {e}")
         return False
     return True
-def setup_localization():
-    locales_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "locales")
-    lang = gettext.translation("d0rne", locales_dir, fallback=True)
-    lang.install()
-    return lang.gettext
 
-_ = setup_localization()
-
-def get_config_path():
-    config_dir = appdirs.user_config_dir("d0rne")
-    return os.path.join(config_dir, "config")
-
-def load_config():
-    config = configparser.ConfigParser()
-    config_file = get_config_path()
-    if os.path.exists(config_file):
-        config.read(config_file)
-    return config
-
-def save_config(config):
-    config_file = get_config_path()
-    os.makedirs(os.path.dirname(config_file), exist_ok=True)
-    with open(config_file, 'w') as f:
-        config.write(f)
-
-def safe_execute(func, *args, **kwargs):
+async def get_latest_version():
     try:
-        return func(*args, **kwargs)
-    except requests.RequestException as e:
-        print(f"{Fore.RED}{_('Network error')}: {e}")
-    except IOError as e:
-        print(f"{Fore.RED}{_('File I/O error')}: {e}")
-    except ValueError as e:
-        print(f"{Fore.RED}{_('Invalid input')}: {e}")
-    except KeyboardInterrupt:
-        print(f"{Fore.YELLOW}\n{_('Operation cancelled by user.')}")
-    except Exception as e:
-        print(f"{Fore.RED}{_('An unexpected error occurred')}: {e}")
-    return None
-
-def get_latest_version():
-    try:
-        response = requests.get("https://api.github.com/repos/q4no/d0rne/releases/latest", timeout=5)
-        response.raise_for_status()  
-        data = response.json()
-        if 'tag_name' in data:
-            return data['tag_name']
-        else:
-            print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
-            return None
-    except requests.RequestException as e:
+        async with aiohttp.ClientSession() as session:
+            async with session.get("https://api.github.com/repos/q4no/d0rne/releases/latest", timeout=5) as response:
+                response.raise_for_status()  
+                data = await response.json()
+                if 'tag_name' in data:
+                    return data['tag_name']
+                else:
+                    print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
+                    return None
+    except aiohttp.ClientError as e:
         print(f"{Fore.YELLOW}Warning: Failed to check for updates: {e}")
         return None
     except ValueError as e:  
         print(f"{Fore.YELLOW}Warning: Failed to parse GitHub response: {e}")
         return None
 
-def self_update():
-    current_version = "1.0.2"  
-    latest_version = get_latest_version()
-
-    if latest_version is None:
-        return False
-
-    if version.parse(latest_version) <= version.parse(current_version):
-        print(f"{Fore.GREEN}You are already running the latest version ({current_version}).{Style.RESET_ALL}")
-        return True
-
-    print(f"{Fore.YELLOW}Updating d0rne from version {current_version} to {latest_version}...{Style.RESET_ALL}")
-
-    url = f"https://github.com/q4no/d0rne/archive/{latest_version}.zip"
-    zip_path = "d0rne_latest.zip"
-
-    try:
-        with requests.get(url, stream=True) as response:
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-
-            with open(zip_path, 'wb') as file, tqdm(
-                desc="Downloading update",
-                total=total_size,
-                unit='iB',
-                unit_scale=True,
-                unit_divisor=1024,
-            ) as pbar:
-                for data in response.iter_content(chunk_size=8192):
-                    size = file.write(data)
-                    pbar.update(size)
-
-        with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-            zip_ref.extractall("d0rne_update")
-
-        new_script_path = f"d0rne_update/d0rne-{latest_version}/d0rne.py"
-        current_script_path = os.path.abspath(__file__)
-        shutil.move(new_script_path, current_script_path)
-
-        os.remove(zip_path)
-        shutil.rmtree("d0rne_update")
-
-        print(f"{Fore.GREEN}Update completed successfully. Please restart d0rne.{Style.RESET_ALL}")
-        return True
-
-    except Exception as e:
-        print(f"{Fore.RED}Update failed: {e}{Style.RESET_ALL}")
-        return False
-def check_for_updates():
+async def check_for_updates():
     current_version = "1.0.2"
-    latest_version = get_latest_version()
+    latest_version = await get_latest_version()
 
     if latest_version is None:
         print(f"{Fore.YELLOW}Skipping update check due to error.")
         return
-
-    
 
     if version.parse(latest_version) > version.parse(current_version):
         print(f"{Fore.YELLOW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
@@ -275,6 +188,8 @@ def check_for_updates():
     else:
         print(f"{Fore.GREEN}You are running the latest version of d0rne ({current_version}).{Style.RESET_ALL}")
 
+async def async_main():
+    parser = argparse.ArgumentParser(description=_("d0rne: Your cli Downloader\n Made by b0urn3 \n GITHUB:github.com/q4no | Instagram:onlybyhive "))
 def animated_exit():
     frames = [
         "Exiting d0rne |",
@@ -631,6 +546,8 @@ async def async_main():
 
     args = parser.parse_args()
 
+      args = parser.parse_args()
+
     if args.update:
         await self_update()
         return
@@ -649,12 +566,6 @@ async def async_main():
     if args.no_color:
         init(strip=True, convert=False)
     
-    if args.http2:
-        connection_pool.connector = TCPConnector(force_http2=True)
-
-    if args.plugin:
-        plugin_manager.load_plugin(args.plugin)
-
     await check_for_updates()
 
     try:

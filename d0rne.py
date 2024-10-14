@@ -406,7 +406,7 @@ def run_wget(command, show_progress=False, quiet_mode=False):
         with tqdm(total=100, unit="%", bar_format="{l_bar}{bar}| {n:.2f}%", disable=quiet_mode) as pbar:
             while True:
                 output = process.stdout.readline()
-                if output == '' and process.poll() is not
+                if output == '' and process.poll() is not None:
                     break
                 if output:
                     progress_info = parse_wget_output(output)
@@ -432,9 +432,8 @@ def run_wget(command, show_progress=False, quiet_mode=False):
         print(f"\n{Fore.YELLOW}Download interrupted by user. Exiting...")
         return False
     finally:
-        if loader.done == False:
+        if not loader.done:
             loader.stop()
-
 def download_with_retry(url, output=None, resume=False, user_agent=None, retry_attempts=3, retry_delay=5, quiet_mode=False, proxy=None, limit_rate=None):
     print(DOWNLOAD_ASCII)
     command = ["wget", "--progress=bar:force"]

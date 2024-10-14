@@ -270,7 +270,7 @@ def download_file(url, output, quiet_mode=False):
             else:
                 wget_cmd.extend(["--progress=bar:force", "--show-progress"])
             subprocess.run(wget_cmd, check=True)
-       except subprocess.CalledProcessError as e:
+        except subprocess.CalledProcessError as e:
             print(f"{Fore.RED}{_('Error downloading file')}: {e}")
             return False
     return True

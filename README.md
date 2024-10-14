@@ -1,6 +1,6 @@
-## d0rne: Your CLI Downloader
+# d0rne: Your CLI Downloader
 
-d0rne is a versatile command-line downloader tool created by b0urn3. It supports various download types including single files, websites, FTP, torrents, and now features multiple concurrent downloads.
+d0rne is a versatile command-line downloader tool created by b0urn3. It supports various download types including single files, websites, FTP, torrents, and features multiple concurrent downloads.
 
 ## Features
 
@@ -25,85 +25,161 @@ d0rne is a versatile command-line downloader tool created by b0urn3. It supports
 
 - Python 3.6 or higher
 - pip (Python package manager)
-- python3-libtorrent
 
-### Installation Steps
+### Linux
 
-1. Clone the repository or download `d0rne.py`
-2. Install the required packages:
-3. For linux  also use
+1. Install Python and pip if not already installed:
+   ```
+   sudo apt update
+   sudo apt install python3 python3-pip
+   ```
+
+2. Install libtorrent:
+   ```
    sudo apt install python3-libtorrent
+   ```
 
-```bash
-pip install colorama requests tqdm python-libtorrent appdirs packaging
-Note: On some systems, you might need to use pip3 instead of pip.
+3. Clone the repository or download `d0rne.py`
+
+4. Install required packages:
+   ```
+   pip3 install colorama requests tqdm appdirs packaging aiohttp aiofiles aiohttp_socks yarl
+   ```
+
+### macOS
+
+1. Install Homebrew if not already installed:
+   ```
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+2. Install Python:
+   ```
+   brew install python
+   ```
+
+3. Install libtorrent:
+   ```
+   brew install libtorrent-rasterbar
+   ```
+
+4. Clone the repository or download `d0rne.py`
+
+5. Install required packages:
+   ```
+   pip3 install colorama requests tqdm appdirs packaging aiohttp aiofiles aiohttp_socks yarl
+   ```
+
+### Windows
+
+1. Download and install Python from [python.org](https://www.python.org/downloads/)
+
+2. During installation, make sure to check "Add Python to PATH"
+
+3. Open Command Prompt as Administrator
+
+4. Install required packages:
+   ```
+   pip install colorama requests tqdm appdirs packaging aiohttp aiofiles aiohttp_socks yarl python-libtorrent
+   ```
+
+5. Clone the repository or download `d0rne.py`
 
 ## Usage
 
-Interactive Mode
-Run d0rne in interactive mode:
-python3 d0rne.py
+### Interactive Mode
 
-## linux users are recommended to run with sudo or virtual env
+Run d0rne in interactive mode:
+
+```
+python3 d0rne.py
+```
+
+Note: On Windows, you might need to use `python` instead of `python3`.
+
+For Linux users, it's recommended to run with sudo or in a virtual environment:
+
+```
+sudo python3 d0rne.py
+```
 
 Follow the on-screen menu to choose your download option.
-## Command-line Usage
 
-Download a file:
-python3 d0rne.py "https://example.com/file.zip" -o output.zip
+### Command-line Usage
 
-Download a website:
-python3 d0rne.py "https://example.com" -w -d 2
+- Download a file:
+  ```
+  python3 d0rne.py "https://example.com/file.zip" -o output.zip
+  ```
 
-Download from FTP:
-python3 d0rne.py "ftp://example.com/file.txt" --ftp-user username --ftp-pass password
+- Download a website:
+  ```
+  python3 d0rne.py "https://example.com" -w -d 2
+  ```
 
-Download a torrent:
-python3 d0rne.py "path/to/torrent/file.torrent" -t
+- Download from FTP:
+  ```
+  python3 d0rne.py "ftp://example.com/file.txt" --ftp-user username --ftp-pass password
+  ```
 
-Check website status:
-python3 d0rne.py "https://example.com" --check
+- Download a torrent:
+  ```
+  python3 d0rne.py "path/to/torrent/file.torrent" -t
+  ```
 
-Update d0rne:
-python3 d0rne.py --update
+- Check website status:
+  ```
+  python3 d0rne.py "https://example.com" --check
+  ```
 
+- Update d0rne:
+  ```
+  python3 d0rne.py --update
+  ```
 
 ## Options
 
--o, --output: Specify output filename or directory
--r, --resume: Resume partially downloaded files
--u, --user-agent: Set user agent string
--w, --website: Download entire website
--d, --depth: Set depth for website download (default: 1)
--k, --convert-links: Convert links for offline viewing
--p, --page-requisites: Download all page requisites
--q, --quiet: Quiet mode for downloads
--t, --torrent: Download as torrent
---check: Check website status
---proxy: Set proxy server (e.g., http://proxy:port)
---limit-rate: Limit download speed (e.g., 500k)
---update: Update d0rne to the latest version
---no-color: Disable colored output
+- `-o, --output`: Specify output filename or directory
+- `-r, --resume`: Resume partially downloaded files
+- `-u, --user-agent`: Set user agent string
+- `-w, --website`: Download entire website
+- `-d, --depth`: Set depth for website download (default: 1)
+- `-k, --convert-links`: Convert links for offline viewing
+- `-p, --page-requisites`: Download all page requisites
+- `-q, --quiet`: Quiet mode for downloads
+- `-t, --torrent`: Download as torrent
+- `--check`: Check website status
+- `--proxy`: Set proxy server (e.g., http://proxy:port)
+- `--limit-rate`: Limit download speed (e.g., 500k)
+- `--update`: Update d0rne to the latest version
+- `--no-color`: Disable colored output
 
 ## Configuration
-d0rne supports configuration files for setting default options. The configuration file is located at ~/.config/d0rne/config on Unix-like systems and %LOCALAPPDATA%\d0rne\config on Windows.
-You can set default values for:
 
-Output directory
-User agent
-Proxy
-Download speed limit
+d0rne supports configuration files for setting default options. The configuration file locations are:
+
+- Unix-like systems (Linux, macOS): `~/.config/d0rne/config.ini`
+- Windows: `%LOCALAPPDATA%\d0rne\config.ini`
+
+You can set default values for:
+- Output directory
+- User agent
+- Proxy
+- Download speed limit
 
 ## Logging
-d0rne includes enhanced logging capabilities. Logs are stored in d0rne.log in the same directory as the script.
-Troubleshooting
 
-If you encounter permission errors, try running the script with sudo (Linux) or as administrator (Windows).
-Ensure all dependencies are correctly installed.
-Check the d0rne.log file for detailed error messages and debugging information.
+d0rne includes enhanced logging capabilities. Logs are stored in `d0rne.log` in the same directory as the script.
+
+## Troubleshooting
+
+- If you encounter permission errors on Linux or macOS, try running the script with `sudo`.
+- On Windows, run Command Prompt as Administrator if you encounter permission issues.
+- Ensure all dependencies are correctly installed.
+- Check the `d0rne.log` file for detailed error messages and debugging information.
 
 ## Credits
-Created by b0urn3
 
-GitHub: github.com/q4no
-Instagram: onlybyhive
+Created by b0urn3
+- GitHub: [github.com/q4no](https://github.com/q4no)
+- Instagram: onlybyhive

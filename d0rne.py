@@ -28,11 +28,10 @@ import zipfile
 # Initialize colorama
 init(autoreset=True)
 
-# Setup logging
 logging.basicConfig(filename='d0rne.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 
-# ASCII art and banners
+
 D0RNE_BANNER = f"""{Fore.CYAN}
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⢀⣾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣰⣿⣿⣿⣿⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -101,13 +100,22 @@ def safe_execute(func, *args, **kwargs):
 def get_latest_version():
     try:
         response = requests.get("https://api.github.com/repos/q4no/d0rne/releases/latest", timeout=5)
-        return response.json()["tag_name"]
-    except Exception as e:
-        print(f"{Fore.RED}Failed to fetch latest version: {e}{Style.RESET_ALL}")
+        response.raise_for_status()  
+        data = response.json()
+        if 'tag_name' in data:
+            return data['tag_name']
+        else:
+            print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
+            return None
+    except requests.RequestException as e:
+        print(f"{Fore.YELLOW}Warning: Failed to check for updates: {e}")
+        return None
+    except ValueError as e:  
+        print(f"{Fore.YELLOW}Warning: Failed to parse GitHub response: {e}")
         return None
 
 def self_update():
-    current_version = "1.0.2"  # Update this with your current version
+    current_version = "1.0.2"  
     latest_version = get_latest_version()
 
     if latest_version is None:
@@ -154,13 +162,15 @@ def self_update():
     except Exception as e:
         print(f"{Fore.RED}Update failed: {e}{Style.RESET_ALL}")
         return False
-
 def check_for_updates():
     current_version = "1.0.2"
     latest_version = get_latest_version()
 
     if latest_version is None:
+        print(f"{Fore.YELLOW}Skipping update check due to error.")
         return
+
+    
 
     if version.parse(latest_version) > version.parse(current_version):
         print(f"{Fore.YELLOW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
@@ -179,7 +189,7 @@ def animated_exit():
         "Exiting d0rne -",
         "Exiting d0rne \\",
     ]
-    for _ in range(10):  # Show animation for about 1 second
+    for _ in range(10):  
         for frame in frames:
             sys.stdout.write(f'\r{Fore.YELLOW}{frame}{Style.RESET_ALL}')
             sys.stdout.flush()
@@ -189,11 +199,10 @@ def animated_exit():
     print(f"{Fore.GREEN}Thanks for using d0rne! Goodbye!{Style.RESET_ALL}")
 
 def ctrl_c_handler(signum, frame):
-    print()  # Move to a new line
+    print()  
     animated_exit()
     sys.exit(0)
 
-# Register the CTRL+C handler
 signal.signal(signal.SIGINT, ctrl_c_handler)
 
 class Loader:
@@ -281,7 +290,7 @@ def run_wget(command, show_progress=False, quiet_mode=False):
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
         last_update_time = 0
-        update_interval = 5  # Update every 5 seconds in quiet mode
+        update_interval = 5  
 
         loader.stop()
         print(f"{Fore.GREEN}{_('Starting download...')}")
@@ -533,8 +542,7 @@ def main():
 
     config = load_config()
     if config:
-        # Use config values as defaults if not specified in command line
-        if not args.output:
+       if not args.output:
             args.output = config.get('DEFAULT', 'output_dir', fallback=None)
         if not args.user_agent:
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)

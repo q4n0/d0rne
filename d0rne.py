@@ -412,27 +412,27 @@ def interactive_mode():
 
 async def async_main():
     parser = argparse.ArgumentParser(description="d0rne: Your cli Downloader")
-    parser.add_argument("url", nargs="?", help=_("URL or torrent file/magnet link to download"))
-    parser.add_argument("-o", "--output", help=_("Output filename or directory"))
-    parser.add_argument("-r", "--resume", action="store_true", help=_("Resume partially downloaded files"))
-    parser.add_argument("-u", "--user-agent", help=_("Set user agent string"))
-    parser.add_argument("-w", "--website", action="store_true", help=_("Download entire website"))
-    parser.add_argument("-d", "--depth", type=int, default=1, help=_("Depth for website download (default: 1)"))
-    parser.add_argument("-k", "--convert-links", action="store_true", help=_("Convert links for offline viewing"))
-    parser.add_argument("-p", "--page-requisites", action="store_true", help=_("Download all page requisites"))
-    parser.add_argument("--ftp-user", help=_("FTP username"))
-    parser.add_argument("--ftp-pass", help=_("FTP password"))
-    parser.add_argument("--check", action="store_true", help=_("Check website status"))
-    parser.add_argument("-q", "--quiet", action="store_true", help=_("Quiet mode for downloads"))
-    parser.add_argument("-t", "--torrent", action="store_true", help=_("Download as torrent"))
-    parser.add_argument("--proxy", help=_("Set proxy server (e.g., http://proxy:port)"))
-    parser.add_argument("--limit-rate", help=_("Limit download speed (e.g., 500k)"))
-    parser.add_argument("--no-color", action="store_true", help=_("Disable colored output"))
-    parser.add_argument("--update", action="store_true", help=_("Update d0rne to the latest version"))
-    parser.add_argument("--http2", action="store_true", help=_("Use HTTP/2 for downloads"))
-    parser.add_argument("--plugin", help=_("Use a specific plugin for download"))
-    
-   args = parser.parse_args()
+    parser.add_argument("url", nargs="?", help="URL or torrent file/magnet link to download")
+    parser.add_argument("-o", "--output", help="Output filename or directory")
+    parser.add_argument("-r", "--resume", action="store_true", help="Resume partially downloaded files")
+    parser.add_argument("-u", "--user-agent", help="Set user agent string")
+    parser.add_argument("-w", "--website", action="store_true", help="Download entire website")
+    parser.add_argument("-d", "--depth", type=int, default=1, help="Depth for website download (default: 1)")
+    parser.add_argument("-k", "--convert-links", action="store_true", help="Convert links for offline viewing")
+    parser.add_argument("-p", "--page-requisites", action="store_true", help="Download all page requisites")
+    parser.add_argument("--ftp-user", help="FTP username")
+    parser.add_argument("--ftp-pass", help="FTP password")
+    parser.add_argument("--check", action="store_true", help="Check website status")
+    parser.add_argument("-q", "--quiet", action="store_true", help="Quiet mode for downloads")
+    parser.add_argument("-t", "--torrent", action="store_true", help="Download as torrent")
+    parser.add_argument("--proxy", help="Set proxy server (e.g., http://proxy:port)")
+    parser.add_argument("--limit-rate", help="Limit download speed (e.g., 500k)")
+    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument("--update", action="store_true", help="Update d0rne to the latest version")
+    parser.add_argument("--http2", action="store_true", help="Use HTTP/2 for downloads")
+    parser.add_argument("--plugin", help="Use a specific plugin for download")
+
+    args = parser.parse_args()
 
     if args.update:
         await self_update()
@@ -440,7 +440,7 @@ async def async_main():
 
     config = load_config()
     if config:
-       if not args.output:
+        if not args.output:
             args.output = config.get('DEFAULT', 'output_dir', fallback=None)
         if not args.user_agent:
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)
@@ -449,7 +449,7 @@ async def async_main():
         if not args.limit_rate:
             args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
     
- if args.no_color:
+    if args.no_color:
         init(strip=True, convert=False)
     
     await check_for_updates()
@@ -475,7 +475,7 @@ async def async_main():
             await interactive_mode()
     finally:
         await connection_pool.close()
-
+      
 def main():
     asyncio.run(async_main())
 

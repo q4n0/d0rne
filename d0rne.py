@@ -1,36 +1,31 @@
 import argparse
-import subprocess
-import concurrent.futures
-import queue
 import os
-import time
 import sys
-import socket
-import urllib.parse
+import time
 import re
-import requests
-from colorama import init, Fore, Back, Style
-import threading
-import itertools
-import libtorrent as lt
 import signal
-import configparser
 import logging
-from tqdm import tqdm
 import platform
-import getpass
 import gettext
+import asyncio
+import aiohttp
+import aiofiles
+from aiohttp import ClientTimeout, TCPConnector
+from aiohttp_socks import ProxyConnector
+from yarl import URL
+from colorama import init, Fore, Style
+import libtorrent as lt
+from tqdm import tqdm
 import appdirs
 from packaging import version
-import shutil
-import zipfile
+import configparser
 
 # Initialize colorama
 init(autoreset=True)
 
+# Set up logging
 logging.basicConfig(filename='d0rne.log', level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
-
 
 D0RNE_BANNER = f"""{Fore.CYAN}
 ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⢀⣾⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
@@ -57,6 +52,104 @@ WEBSITE_DOWN_ASCII = f"{Fore.RED}[OFFLINE] Website is DOWN!"
 DOWNLOAD_ASCII = f"{Fore.BLUE}[DOWNLOAD] Starting download..."
 FTP_ASCII = f"{Fore.MAGENTA}[FTP] Connecting to FTP server..."
 
+class ConnectionPool:
+    def __init__(self, limit=100, force_close=False, enable_cleanup_closed=True):
+        self.connector = TCPConnector(
+            limit=limit,
+            force_close=force_close,
+            enable_cleanup_closed=enable_cleanup_closed
+        )
+        self.session = None
+
+    async def get_session(self):
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession(
+                connector=self.connector,
+                timeout=ClientTimeout(total=3600),
+                headers={"User-Agent": "d0rne/1.0"}
+            )
+        return self.session
+
+    async def close(self):
+        if self.session and not self.session.closed:
+            await self.session.close()
+        await self.connector.close()
+
+connection_pool = ConnectionPool()
+
+class RateLimiter:
+    def __init__(self, rate_limit):
+        self.rate_limit = rate_limit
+        self.tokens = rate_limit
+        self.updated_at = time.monotonic()
+        self.lock = asyncio.Lock()
+
+    async def acquire(self, size):
+        async with self.lock:
+            now = time.monotonic()
+            time_passed = now - self.updated_at
+            self.tokens = min(self.rate_limit, self.tokens + time_passed * self.rate_limit)
+            self.updated_at = now
+
+            if size > self.tokens:
+                await asyncio.sleep((size - self.tokens) / self.rate_limit)
+                self.tokens = 0
+            else:
+                self.tokens -= size
+
+class PluginManager:
+    def __init__(self):
+        self.plugins = {}
+
+    def load_plugin(self, plugin_name):
+        plugin_path = f"plugins/{plugin_name}.py"
+        spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.plugins[plugin_name] = module
+
+    def get_plugin(self, plugin_name):
+        return self.plugins.get(plugin_name)
+
+plugin_manager = PluginManager()
+
+async def async_download_file(url, output, quiet_mode=False, resume=False, rate_limit=None):
+    try:
+        session = await connection_pool.get_session()
+        headers = {}
+        file_size = 0
+        start_pos = 0
+
+        if resume:
+            if os.path.exists(output):
+                start_pos = os.path.getsize(output)
+                headers['Range'] = f'bytes={start_pos}-'
+
+        async with session.get(url, headers=headers) as response:
+            response.raise_for_status()
+            file_size = int(response.headers.get('content-length', 0))
+
+            if resume and response.status == 206:
+                mode = 'ab'
+            else:
+                mode = 'wb'
+                start_pos = 0
+
+            limiter = RateLimiter(rate_limit) if rate_limit else None
+
+            with tqdm(total=file_size, initial=start_pos, unit='iB', unit_scale=True, disable=quiet_mode) as progress_bar:
+                async with aiofiles.open(output, mode) as f:
+                    chunk_size = 8192
+                    async for chunk in response.content.iter_chunked(chunk_size):
+                        if limiter:
+                            await limiter.acquire(len(chunk))
+                        await f.write(chunk)
+                        progress_bar.update(len(chunk))
+
+    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+        print(f"{Fore.RED}{_('Error downloading file')}: {e}")
+        return False
+    return True
 def setup_localization():
     locales_dir = os.path.join(os.path.abspath(os.path.dirname(__file__)), "locales")
     lang = gettext.translation("d0rne", locales_dir, fallback=True)
@@ -514,7 +607,7 @@ def interactive_mode():
         else:
             print(f"{Fore.RED}{_('Invalid choice. Please try again or use CTRL+C to exit.')}")
 
-def main():
+async def async_main():
     parser = argparse.ArgumentParser(description=_("d0rne: Your cli Downloader\n Made by b0urn3 \n GITHUB:github.com/q4no | Instagram:onlybyhive "))
     parser.add_argument("url", nargs="?", help=_("URL or torrent file/magnet link to download"))
     parser.add_argument("-o", "--output", help=_("Output filename or directory"))
@@ -533,11 +626,13 @@ def main():
     parser.add_argument("--limit-rate", help=_("Limit download speed (e.g., 500k)"))
     parser.add_argument("--no-color", action="store_true", help=_("Disable colored output"))
     parser.add_argument("--update", action="store_true", help=_("Update d0rne to the latest version"))
+    parser.add_argument("--http2", action="store_true", help=_("Use HTTP/2 for downloads"))
+    parser.add_argument("--plugin", help=_("Use a specific plugin for download"))
 
     args = parser.parse_args()
 
     if args.update:
-        self_update()
+        await self_update()
         return
 
     config = load_config()
@@ -554,22 +649,38 @@ def main():
     if args.no_color:
         init(strip=True, convert=False)
     
-    check_for_updates()
+    if args.http2:
+        connection_pool.connector = TCPConnector(force_http2=True)
 
-    if args.url:
-        print_banner()
-        if args.check:
-            safe_execute(check_website_status, args.url)
-        elif args.website:
-            safe_execute(download_website, args.url, args.depth, args.convert_links, args.page_requisites)
-        elif args.ftp_user or args.ftp_pass:
-            safe_execute(download_ftp, args.url, args.ftp_user, args.ftp_pass)
-        elif args.torrent:
-            safe_execute(download_torrent, args.url, args.output or '.')
+    if args.plugin:
+        plugin_manager.load_plugin(args.plugin)
+
+    await check_for_updates()
+
+    try:
+        if args.url:
+            print_banner()
+            if args.check:
+                await safe_execute(check_website_status, args.url)
+            elif args.website:
+                await safe_execute(download_website, args.url, args.depth, args.convert_links, args.page_requisites)
+            elif args.ftp_user or args.ftp_pass:
+                await safe_execute(download_ftp, args.url, args.ftp_user, args.ftp_pass)
+            elif args.torrent:
+                await safe_execute(download_torrent, args.url, args.output or '.')
+            else:
+                plugin = plugin_manager.get_plugin(args.plugin) if args.plugin else None
+                if plugin and hasattr(plugin, 'download'):
+                    await safe_execute(plugin.download, args.url, args.output, args.resume, args.user_agent, quiet_mode=args.quiet, proxy=args.proxy, limit_rate=args.limit_rate)
+                else:
+                    await safe_execute(async_download_file, args.url, args.output, args.quiet, args.resume, parse_rate_limit(args.limit_rate))
         else:
-            safe_execute(download_with_retry, args.url, args.output, args.resume, args.user_agent, quiet_mode=args.quiet, proxy=args.proxy, limit_rate=args.limit_rate)
-    else:
-        safe_execute(interactive_mode)
+            await safe_execute(interactive_mode)
+    finally:
+        await connection_pool.close()
+
+def main():
+    asyncio.run(async_main())
 
 if __name__ == "__main__":
     try:

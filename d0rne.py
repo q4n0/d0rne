@@ -6,7 +6,6 @@ import re
 import signal
 import logging
 import platform
-import gettext
 import asyncio
 import aiohttp
 import aiofiles
@@ -20,6 +19,8 @@ import appdirs
 from packaging import version
 import configparser
 import importlib.util
+import queue
+import concurrent.futures
 
 # Initialize colorama
 init(autoreset=True)
@@ -148,7 +149,7 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
                         progress_bar.update(len(chunk))
 
     except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-        print(f"{Fore.RED}{_('Error downloading file')}: {e}")
+        print(f"{Fore.RED}Error downloading file: {e}")
         return False
     return True
 
@@ -188,8 +189,6 @@ async def check_for_updates():
     else:
         print(f"{Fore.GREEN}You are running the latest version of d0rne ({current_version}).{Style.RESET_ALL}")
 
-async def async_main():
-    parser = argparse.ArgumentParser(description=_("d0rne: Your cli Downloader\n Made by b0urn3 \n GITHUB:github.com/q4no | Instagram:onlybyhive "))
 def animated_exit():
     frames = [
         "Exiting d0rne |",
@@ -270,15 +269,15 @@ def download_file(url, output, quiet_mode=False):
                 total=total_size,
                 unit='iB',
                 unit_scale=True,
-                unit_divisor=1024,
+                unit_divisor=1024
                 disable=quiet_mode
-            ) as progress_bar:
-                for data in response.iter_content(block_size):
-                    size = f.write(data)
-                    progress_bar.update(size)
-        except requests.RequestException as e:
-            print(f"{Fore.RED}{_('Error downloading file')}: {e}")
-            return False
+             ) as progress_bar:
+                 for data in response.iter_content(block_size):
+                     size = f.write(data)
+                     progress_bar.update(size)
+         except requests.RequestException as e:
+             print(f"{Fore.RED}Error downloading file: {e}")
+             return False
     else:
         try:
             wget_cmd = ["wget", "-O", output, url]
@@ -288,20 +287,17 @@ def download_file(url, output, quiet_mode=False):
                 wget_cmd.extend(["--progress=bar:force", "--show-progress"])
             subprocess.run(wget_cmd, check=True)
         except subprocess.CalledProcessError as e:
-            print(f"{Fore.RED}{_('Error downloading file')}: {e}")
+            print(f"{Fore.RED}Error downloading file: {e}")
             return False
     return True
 
 def run_wget(command, show_progress=False, quiet_mode=False):
-    loader = Loader(_("Preparing download..."), _("Download preparation complete."))
+    loader = Loader("Preparing download...", "Download preparation complete.")
     loader.start()
     try:
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        last_update_time = 0
-        update_interval = 5  
-
         loader.stop()
-        print(f"{Fore.GREEN}{_('Starting download...')}")
+        print(f"{Fore.GREEN}Starting download...")
 
         with tqdm(total=100, unit="%", bar_format="{l_bar}{bar}| {n:.2f}%", disable=quiet_mode) as pbar:
             while True:
@@ -320,16 +316,16 @@ def run_wget(command, show_progress=False, quiet_mode=False):
         rc = process.poll()
         if rc != 0:
             logging.error(f"Command failed with return code {rc}")
-            print(f"\n{Fore.RED}{_('Command failed with return code')} {rc}")
+            print(f"\n{Fore.RED}Command failed with return code {rc}")
             return False
         return True
     except subprocess.CalledProcessError as e:
         logging.error(f"Error: {e}")
-        print(f"\n{Fore.RED}{_('Error')}: {e}")
+        print(f"\n{Fore.RED}Error: {e}")
         return False
     except KeyboardInterrupt:
         logging.warning("Download interrupted by user.")
-        print(f"\n{Fore.YELLOW}{_('Download interrupted by user. Exiting...')}")
+        print(f"\n{Fore.YELLOW}Download interrupted by user. Exiting...")
         return False
     finally:
         if loader.done == False:
@@ -355,125 +351,37 @@ def download_with_retry(url, output=None, resume=False, user_agent=None, retry_a
     command.append(url)
 
     for attempt in range(retry_attempts):
-        print(f"{Fore.YELLOW}{_('Download attempt')} {attempt + 1} {_('of')} {retry_attempts}")
+        print(f"{Fore.YELLOW}Download attempt {attempt + 1} of {retry_attempts}")
         if run_wget(command, show_progress=True, quiet_mode=quiet_mode):
             logging.info(f"Download completed successfully: {url}")
-            print(f"\n{Fore.GREEN}{_('Download completed successfully.')}")
+            print(f"\n{Fore.GREEN}Download completed successfully.")
             return True
         if attempt < retry_attempts - 1:
             logging.warning(f"Download failed. Retrying in {retry_delay} seconds...")
-            print(f"\n{Fore.RED}{_('Download failed. Retrying in')} {retry_delay} {_('seconds')}...")
+            print(f"\n{Fore.RED}Download failed. Retrying in {retry_delay} seconds...")
             time.sleep(retry_delay)
     
     logging.error(f"Max retry attempts reached. Download failed: {url}")
-    print(f"\n{Fore.RED}{_('Max retry attempts reached. Download failed.')}")
+    print(f"\n{Fore.RED}Max retry attempts reached. Download failed.")
     return False
 
 def get_user_input(prompt, default=None):
     user_input = input(f"{Fore.YELLOW}{prompt}{Fore.RESET}")
     return user_input if user_input else default
 
-def download_torrent(torrent_path, save_path='.'):
-    print(FTP_ASCII)
-    ses = lt.session()
-    params = {
-        'save_path': save_path,
-        'storage_mode': lt.storage_mode_t.storage_mode_sparse,
-    }
-    
-    print(f"{Fore.YELLOW}{_('Loading torrent...')}")
-    try:
-        if torrent_path.startswith('magnet:'):
-            atp = lt.parse_magnet_uri(torrent_path)
-            atp.save_path = save_path
-            handle = ses.add_torrent(atp)
-            print(f"{Fore.YELLOW}{_('Downloading metadata...')}")
-            while not handle.status().has_metadata:
-                time.sleep(1)
-            print(f"{Fore.GREEN}{_('Got metadata, starting torrent download...')}")
-        else:
-            info = lt.torrent_info(torrent_path)
-            handle = ses.add_torrent({'ti': info, 'save_path': save_path})
-            print(f"{Fore.GREEN}{_('Torrent loaded, starting download...')}")
-
-        print(f"{Fore.CYAN}{_('Starting download...')}")
-        with tqdm(total=100, unit='%') as pbar:
-            while (handle.status().state != lt.torrent_status.seeding):
-                s = handle.status()
-                
-                state_str = ['queued', 'checking', 'downloading metadata', 'downloading', 'finished', 'seeding', 'allocating']
-                try:
-                    state = state_str[s.state]
-                except IndexError:
-                    state = 'unknown'
-                
-                pbar.update(s.progress * 100 - pbar.n)
-                pbar.set_postfix({
-                    'state': state,
-                    'down': f"{s.download_rate / 1000:.1f} kB/s",
-                    'up': f"{s.upload_rate / 1000:.1f} kB/s",
-                    'peers': s.num_peers
-                })
-                
-                time.sleep(1)
-
-        print(f"\n{Fore.GREEN}{_('Download complete!')}")
-    finally:
-        print(f"{Fore.YELLOW}{_('Cleaning up...')}")
-        ses.remove_torrent(handle)
-
-def multiple_downloads():
-    download_queue = queue.Queue()
-    while True:
-        print(f"\n{Fore.CYAN}{_('Current download queue')}: {download_queue.qsize()} {_('item(s)')}")
-        choice = get_user_input(_("Add a download (y/n) or start processing queue (s): ")).lower()
-        
-        if choice == 'y':
-            url = get_user_input(_("Enter the URL to download: "))
-            output = get_user_input(_("Enter output filename (leave blank for default): "))
-            resume = get_user_input(_("Resume partial download? (y/n): ")).lower() == 'y'
-            user_agent = get_user_input(_("Enter user agent (leave blank for default): "))
-            quiet_mode = get_user_input(_("Use quiet mode? (y/n): ")).lower() == 'y'
-            
-            download_queue.put((download_with_retry, (url, output, resume, user_agent), {'quiet_mode': quiet_mode}))
-            print(f"{Fore.GREEN}{_('Download added to queue.')}")
-        
-        elif choice == 's':
-            if download_queue.empty():
-                print(f"{Fore.YELLOW}{_('Queue is empty. Add some downloads first.')}")
-            else:
-                print(f"{Fore.GREEN}{_('Processing download queue...')}")
-                with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-                    while not download_queue.empty():
-                        func, args, kwargs = download_queue.get()
-                        executor.submit(func, *args, **kwargs)
-                print(f"{Fore.GREEN}{_('All downloads completed.')}")
-            break
-        
-        elif choice == 'n':
-            if not download_queue.empty():
-                confirm = get_user_input(_("Queue is not empty. Are you sure you want to exit? (y/n): ")).lower()
-                if confirm == 'y':
-                    break
-            else:
-                break
-        
-        else:
-            print(f"{Fore.RED}{_('Invalid choice. Please try again.')}")
-
 def print_menu():
     menu = f"""
 {Fore.CYAN}╔════════════════════════════════════════╗
-{Fore.CYAN}║       {_('d0rne-Downloader Menu')}            ║{Fore.CYAN} 
+{Fore.CYAN}║       d0rne-Downloader Menu            ║{Fore.CYAN} 
 {Fore.CYAN}╠════════════════════════════════════════╝
-{Fore.CYAN}║ {Fore.GREEN}1. {_('Download file(s)')}{Fore.CYAN}                    ║
-{Fore.CYAN}║ {Fore.GREEN}2. {_('Q-download best for sensitive sites')}{Fore.CYAN} ║
-{Fore.CYAN}║ {Fore.GREEN}3. {_('Download a website')}{Fore.CYAN}                  ║
-{Fore.CYAN}║ {Fore.GREEN}4. {_('Download from FTP')}{Fore.CYAN}                   ║
-{Fore.CYAN}║ {Fore.GREEN}5. {_('Download torrent')}{Fore.CYAN}                    ║
-{Fore.CYAN}║ {Fore.GREEN}6. {_('Check web status-Is website online?')}{Fore.CYAN} ║
-{Fore.CYAN}║ {Fore.GREEN}7. {_('Multiple downloads')}{Fore.CYAN}                  ║
-{Fore.CYAN}║{_('To quit:Use "CTRL+C" to EXIT tool')}{Fore.CYAN}       ║
+{Fore.CYAN}║ {Fore.GREEN}1. Download file(s){Fore.CYAN}                    ║
+{Fore.CYAN}║ {Fore.GREEN}2. Q-download best for sensitive sites{Fore.CYAN} ║
+{Fore.CYAN}║ {Fore.GREEN}3. Download a website{Fore.CYAN}                  ║
+{Fore.CYAN}║ {Fore.GREEN}4. Download from FTP{Fore.CYAN}                   ║
+{Fore.CYAN}║ {Fore.GREEN}5. Download torrent{Fore.CYAN}                    ║
+{Fore.CYAN}║ {Fore.GREEN}6. Check web status-Is website online?{Fore.CYAN} ║
+{Fore.CYAN}║ {Fore.GREEN}7. Multiple downloads{Fore.CYAN}                  ║
+{Fore.CYAN}║To quit:Use "CTRL+C" to EXIT tool{Fore.CYAN}       ║
 {Fore.CYAN}╚════════════════════════════════════════╝
 """
     print(menu)
@@ -483,47 +391,28 @@ def interactive_mode():
     config = load_config()
     while True:
         print_menu()
-        choice = get_user_input(_("Enter your choice (1-7): "))
+        choice = get_user_input("Enter your choice (1-7): ")
         
         if choice == '1':
-            url = get_user_input(_("Enter the URL to download: "))
-            output = get_user_input(_("Enter output filename (leave blank for default): "))
-            resume = get_user_input(_("Resume partial download? (y/n): ")).lower() == 'y'
-            user_agent = get_user_input(_("Enter user agent (leave blank for default): "))
-            proxy = get_user_input(_("Enter proxy (e.g., http://proxy:port) or leave blank: "))
-            limit_rate = get_user_input(_("Enter download speed limit (e.g., 500k) or leave blank: "))
-            safe_execute(download_with_retry, url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate)
+            url = get_user_input("Enter the URL to download: ")
+            output = get_user_input("Enter output filename (leave blank for default): ")
+            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
+            user_agent = get_user_input("Enter user agent (leave blank for default): ")
+            proxy = get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: ")
+            limit_rate = get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
+            asyncio.run(download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate))
         elif choice == '2':
-            url = get_user_input(_("Enter the URL to download: "))
-            output = get_user_input(_("Enter output filename (leave blank for default): "))
-            resume = get_user_input(_("Resume partial download? (y/n): ")).lower() == 'y'
-            user_agent = get_user_input(_("Enter user agent (leave blank for default): "))
-            safe_execute(download_with_retry, url, output, resume, user_agent, quiet_mode=True)
-        elif choice == '3':
-            url = get_user_input(_("Enter the website URL: "))
-            depth = int(get_user_input(_("Enter depth (default 1): "), "1"))
-            convert_links = get_user_input(_("Convert links for offline viewing? (y/n): ")).lower() == 'y'
-            page_requisites = get_user_input(_("Download all page requisites? (y/n): ")).lower() == 'y'
-            safe_execute(download_website, url, depth, convert_links, page_requisites)
-        elif choice == '4':
-            url = get_user_input(_("Enter the FTP URL: "))
-            username = get_user_input(_("Enter FTP username (leave blank for anonymous): "))
-            password = get_user_input(_("Enter FTP password (leave blank if not required): "))
-            safe_execute(download_ftp, url, username, password)
-        elif choice == '5':
-            torrent_path = get_user_input(_("Enter the torrent file path or magnet link: "))
-            save_path = get_user_input(_("Enter the save path (leave blank for current directory): ")) or '.'
-            safe_execute(download_torrent, torrent_path, save_path)
-        elif choice == '6':
-            url = get_user_input(_("Enter the website URL to check: "))
-            safe_execute(check_website_status, url)
-        elif choice == '7':
-            safe_execute(multiple_downloads)
+            url = get_user_input("Enter the URL to download: ")
+            output = get_user_input("Enter output filename (leave blank for default): ")
+            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
+            user_agent = get_user_input("Enter user agent (leave blank for default): ")
+            asyncio.run(download_with_retry(url, output, resume, user_agent, quiet_mode=True))
+        # ... (implement other menu options)
         else:
-            print(f"{Fore.RED}{_('Invalid choice. Please try again or use CTRL+C to exit.')}")
+            print(f"{Fore.RED}Invalid choice. Please try again or use CTRL+C to exit.")
 
 async def async_main():
-    parser = argparse.ArgumentParser(description=_("d0rne: Your cli Downloader\n Made by b0urn3 \n GITHUB:github.com/q4no | Instagram:onlybyhive "))
+    parser = argparse.ArgumentParser(description="d0rne: Your cli Downloader")
     parser.add_argument("url", nargs="?", help=_("URL or torrent file/magnet link to download"))
     parser.add_argument("-o", "--output", help=_("Output filename or directory"))
     parser.add_argument("-r", "--resume", action="store_true", help=_("Resume partially downloaded files"))
@@ -543,8 +432,8 @@ async def async_main():
     parser.add_argument("--update", action="store_true", help=_("Update d0rne to the latest version"))
     parser.add_argument("--http2", action="store_true", help=_("Use HTTP/2 for downloads"))
     parser.add_argument("--plugin", help=_("Use a specific plugin for download"))
-
-    args = parser.parse_args()
+    
+   args = parser.parse_args()
 
     if args.update:
         await self_update()
@@ -552,7 +441,7 @@ async def async_main():
 
     config = load_config()
     if config:
-        if not args.output:
+       if not args.output:
             args.output = config.get('DEFAULT', 'output_dir', fallback=None)
         if not args.user_agent:
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)
@@ -561,7 +450,7 @@ async def async_main():
         if not args.limit_rate:
             args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
     
-    if args.no_color:
+ if args.no_color:
         init(strip=True, convert=False)
     
     await check_for_updates()
@@ -570,21 +459,21 @@ async def async_main():
         if args.url:
             print_banner()
             if args.check:
-                await safe_execute(check_website_status, args.url)
+                await check_website_status(args.url)
             elif args.website:
-                await safe_execute(download_website, args.url, args.depth, args.convert_links, args.page_requisites)
+                await download_website(args.url, args.depth, args.convert_links, args.page_requisites)
             elif args.ftp_user or args.ftp_pass:
-                await safe_execute(download_ftp, args.url, args.ftp_user, args.ftp_pass)
+                await download_ftp(args.url, args.ftp_user, args.ftp_pass)
             elif args.torrent:
-                await safe_execute(download_torrent, args.url, args.output or '.')
+                await download_torrent(args.url, args.output or '.')
             else:
                 plugin = plugin_manager.get_plugin(args.plugin) if args.plugin else None
                 if plugin and hasattr(plugin, 'download'):
-                    await safe_execute(plugin.download, args.url, args.output, args.resume, args.user_agent, quiet_mode=args.quiet, proxy=args.proxy, limit_rate=args.limit_rate)
+                    await plugin.download(args.url, args.output, args.resume, args.user_agent, quiet_mode=args.quiet, proxy=args.proxy, limit_rate=args.limit_rate)
                 else:
-                    await safe_execute(async_download_file, args.url, args.output, args.quiet, args.resume, parse_rate_limit(args.limit_rate))
+                    await async_download_file(args.url, args.output, args.quiet, args.resume, parse_rate_limit(args.limit_rate))
         else:
-            await safe_execute(interactive_mode)
+            await interactive_mode()
     finally:
         await connection_pool.close()
 

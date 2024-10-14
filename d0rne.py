@@ -542,7 +542,8 @@ def main():
 
     config = load_config()
     if config:
-       if not args.output:
+      
+      if not args.output:
             args.output = config.get('DEFAULT', 'output_dir', fallback=None)
         if not args.user_agent:
             args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)

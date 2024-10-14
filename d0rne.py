@@ -51,7 +51,7 @@ D0RNE_BANNER = f"""{Fore.CYAN}
   GITHUB: https://github.com/q4no | Instagram: onlybyhive 
               | TOOL VERSION: 1.0.2 |
          -------------------------------------------
-""""
+"""
 
 WEBSITE_UP_ASCII = f"{Fore.GREEN}[ONLINE] Website is UP and running!"
 WEBSITE_DOWN_ASCII = f"{Fore.RED}[OFFLINE] Website is DOWN!"

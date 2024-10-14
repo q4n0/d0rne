@@ -271,13 +271,13 @@ def download_file(url, output, quiet_mode=False):
                 unit_scale=True,
                 unit_divisor=1024,
                 disable=quiet_mode
-             ) as progress_bar:
-                 for data in response.iter_content(block_size):
-                     size = f.write(data)
-                     progress_bar.update(size)
-         except requests.RequestException as e:
-             print(f"{Fore.RED}Error downloading file: {e}")
-             return False
+            ) as progress_bar:
+                for data in response.iter_content(block_size):
+                    size = f.write(data)
+                    progress_bar.update(size)
+        except requests.RequestException as e:
+            print(f"{Fore.RED}Error downloading file: {e}")
+            return False
     else:
         try:
             wget_cmd = ["wget", "-O", output, url]
@@ -290,7 +290,6 @@ def download_file(url, output, quiet_mode=False):
             print(f"{Fore.RED}Error downloading file: {e}")
             return False
     return True
-
 def run_wget(command, show_progress=False, quiet_mode=False):
     loader = Loader("Preparing download...", "Download preparation complete.")
     loader.start()

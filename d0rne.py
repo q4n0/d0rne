@@ -24,6 +24,8 @@ import threading
 import itertools
 from ftplib import FTP
 from typing import Optional, List, Tuple, Any
+import platform
+from pathlib import Path
 
 # Constants
 CURRENT_VERSION = "1.0.3"
@@ -56,7 +58,7 @@ D0RNE_BANNER = f"""{Fore.CYAN}
 {Fore.YELLOW}
         d0rne: Your cli Downloader Made by b0urn3 
   GITHUB: https://github.com/q4no | Instagram: onlybyhive 
-              | TOOL VERSION: 1.0.2 |
+              | TOOL VERSION: 1.0.3 |
             ----------------------------
 """
 
@@ -153,56 +155,27 @@ class RateLimiter:
             else:
                 self.tokens -= size
 
-async def get_latest_github_version() -> Optional[str]:
-    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url) as response:
-                response.raise_for_status()
-                data = await response.json()
-                return data['tag_name']
-        except aiohttp.ClientError as e:
-            logging.error(f"Failed to fetch latest version: {e}")
-        except KeyError:
-            logging.error("Unexpected response format from GitHub API")
-    return None
+def get_downloads_folder():
+    """
+    Get the default downloads folder based on the operating system.
+    """
+    system = platform.system()
+    if system == "Windows":
+        return str(Path.home() / "Downloads")
+    elif system == "Darwin":  # macOS
+        return str(Path.home() / "Downloads")
+    elif system == "Linux":
+        return str(Path.home() / "Downloads")
+    else:
+        return str(Path.home())  # Fallback to home directory
 
-async def check_for_updates() -> bool:
-    latest_version = await get_latest_github_version()
-
-    if latest_version is None:
-        print(f"{Fore.YELLOW}Failed to check for updates. Skipping update check.")
-        return False
-
-    if version.parse(latest_version) > version.parse(CURRENT_VERSION):
-        print(f"{Fore.YELLOW}A new version of d0rne is available!")
-        print(f"{Fore.CYAN}Current version: {CURRENT_VERSION}")
-        print(f"{Fore.CYAN}Latest version: {latest_version}")
-        return True
-    return False
-
-def git_pull() -> bool:
-    if not shutil.which("git"):
-        print(f"{Fore.RED}Git is not installed or not in PATH. Cannot perform update.")
-        return False
-    try:
-        result = subprocess.run(["git", "pull"], capture_output=True, text=True, check=True)
-        print(f"{Fore.GREEN}Update successful. Please restart d0rne.")
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"{Fore.RED}Failed to update: {e}")
-        print(f"Error output: {e.stderr}")
-        return False
-
-async def update_prompt() -> bool:
-    update_available = await check_for_updates()
-    if update_available:
-        choice = input(f"{Fore.YELLOW}Do you want to update now? (y/n): ").lower()
-        if choice == 'y':
-            if git_pull():
-                print(f"{Fore.GREEN}Update completed. Please restart d0rne.")
-                return True
-    return False
+def ensure_dir(file_path):
+    """
+    Ensure that the directory for the given file path exists.
+    """
+    directory = os.path.dirname(file_path)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
 async def download_torrent(torrent_path: str, save_path: str = '.') -> None:
     ses = lt.session()
@@ -255,12 +228,23 @@ async def download_torrent(torrent_path: str, save_path: str = '.') -> None:
         print(f"{Fore.YELLOW}Cleaning up...")
         ses.remove_torrent(handle)
 
-async def async_download_file(url, output, quiet_mode=False, resume=False, rate_limit=None):
+async def async_download_file(url, output=None, quiet_mode=False, resume=False, rate_limit=None):
+    """
+    Asynchronously download a file with a loading animation and progress bar.
+    """
+    loader = Loader("Initializing download...", "Download initialized!", 0.1)
+    loader.start()
     try:
         session = await connection_pool.get_session()
         headers = {}
         file_size = 0
         start_pos = 0
+
+        if output is None:
+            # Extract filename from URL or use a default name
+            output = os.path.join(get_downloads_folder(), os.path.basename(url) or "download")
+        
+        ensure_dir(output)
 
         if resume and os.path.exists(output):
             start_pos = os.path.getsize(output)
@@ -275,6 +259,8 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
 
             limiter = RateLimiter(rate_limit) if rate_limit else None
 
+            loader.stop()  # Stop the loader before starting the progress bar
+
             with tqdm(total=file_size, initial=start_pos, unit='iB', unit_scale=True, disable=quiet_mode) as progress_bar:
                 async with aiofiles.open(output, mode) as f:
                     chunk_size = 8192
@@ -284,7 +270,7 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
                         await f.write(chunk)
                         progress_bar.update(len(chunk))
 
-        print(f"\n{Fore.GREEN}Download completed successfully.")
+        print(f"\n{Fore.GREEN}Download completed successfully. File saved to: {output}")
         return True
     except aiohttp.ClientError as e:
         print(f"{Fore.RED}Network error: {e}")
@@ -298,63 +284,58 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
     except Exception as e:
         print(f"{Fore.RED}Unexpected error: {e}")
         logging.error(f"Unexpected error while downloading {url}: {e}")
+    finally:
+        loader.stop()  # Ensure the loader is stopped in case of any exceptions
     return False
-
-async def get_latest_version():
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get("https://api.github.com/repos/q4no/d0rne/releases/latest", timeout=5) as response:
-                response.raise_for_status()  
-                data = await response.json()
-                if 'tag_name' in data:
-                    return data['tag_name']
-                print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
-                return None
-    except aiohttp.ClientError as e:
-        print(f"{Fore.YELLOW}Warning: Failed to check for updates: {e}")
-    except ValueError as e:  
-        print(f"{Fore.YELLOW}Warning: Failed to parse GitHub response: {e}")
-    return None
-        
+  
 async def download_website(url, depth, convert_links, page_requisites):
-    command = ["wget", "--recursive", f"--level={depth}", "--no-clobber", "--page-requisites", 
-               "--html-extension", "--convert-links", "--restrict-file-names=windows", "--no-parent", url]
-    if convert_links:
-        command.append("--convert-links")
-    if page_requisites:
-        command.append("--page-requisites")
-    
-    process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await process.communicate()
-    
-    if process.returncode == 0:
-        print(f"{Fore.GREEN}Website downloaded successfully.")
-    else:
-        print(f"{Fore.RED}Error downloading website: {stderr.decode()}")
+    loader = Loader("Preparing to download website...", "Website download prepared!", 0.1)
+    loader.start()
+    try:
+        command = ["wget", "--recursive", f"--level={depth}", "--no-clobber", "--page-requisites", 
+                   "--html-extension", "--convert-links", "--restrict-file-names=windows", "--no-parent", url]
+        if convert_links:
+            command.append("--convert-links")
+        if page_requisites:
+            command.append("--page-requisites")
+        
+        loader.stop()  # Stop the loader before starting the download
+        
+        process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode == 0:
+            print(f"{Fore.GREEN}Website downloaded successfully.")
+        else:
+            print(f"{Fore.RED}Error downloading website: {stderr.decode()}")
+    finally:
+        loader.stop()
 
 async def download_ftp(url, username, password):
-    def ftp_download():
-        try:
+    loader = Loader("Connecting to FTP server...", "FTP connection established!", 0.1)
+    loader.start()
+    try:
+        def ftp_download():
             with FTP(url) as ftp:
                 ftp.login(user=username, passwd=password)
                 files = ftp.nlst()
                 
+                loader.stop()  # Stop the loader before starting the download
+                
                 for file in files:
                     print(f"Downloading {file}...")
-                    with open(file, 'wb') as local_file:
+                    local_path = os.path.join(get_downloads_folder(), file)
+                    ensure_dir(local_path)
+                    with open(local_path, 'wb') as local_file:
                         ftp.retrbinary(f'RETR {file}', local_file.write)
-                
+            
             print(f"{Fore.GREEN}FTP download completed successfully.")
-        except Exception as e:
-            print(f"{Fore.RED}Error during FTP download: {e}")
 
-    await asyncio.to_thread(ftp_download)
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
-                print(WEBSITE_UP_ASCII if response.status == 200 else WEBSITE_DOWN_ASCII)
-    except aiohttp.ClientError:
-        print(WEBSITE_DOWN_ASCII)
+        await asyncio.to_thread(ftp_download)
+    except Exception as e:
+        print(f"{Fore.RED}Error during FTP download: {e}")
+    finally:
+        loader.stop()
 
 async def check_website_status(url: str) -> None:
     try:
@@ -367,19 +348,6 @@ async def check_website_status(url: str) -> None:
     except aiohttp.ClientError:
         print(WEBSITE_DOWN_ASCII)
 
-async def self_update():
-    print("Checking for updates...")
-    latest_version = await get_latest_github_version()
-    current_version = "1.0.2"  # Update this to match your current version
-
-    if latest_version and version.parse(latest_version) > version.parse(current_version):
-        print(f"New version {latest_version} available. Updating...")
-        # Implement update logic here
-        # For example, you could download the new version and replace the current script
-        print("Update completed. Please restart d0rne.")
-        return True
-    print("No updates available.")
-    return False
 
 def parse_rate_limit(limit):
     if not limit:
@@ -391,24 +359,6 @@ def parse_rate_limit(limit):
     
     return int(number * units[unit]) if unit in units else int(number)
         
-async def check_for_updates():
-    current_version = "1.0.2"
-    latest_version = await get_latest_version()
-
-    if latest_version is None:
-        print(f"{Fore.YELLOW}Skipping update check due to error.")
-        return
-
-    if version.parse(latest_version) > version.parse(current_version):
-        print(f"{Fore.YELLOW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
-        print(f"{Fore.YELLOW}┃ {Fore.GREEN}A new version of d0rne is available!              {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Current version: {current_version:<8}                   {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Latest version: {latest_version:<8}                    {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Run 'd0rne.py --update' to update automatically   {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛{Style.RESET_ALL}")
-    else:
-        print(f"{Fore.GREEN}You are running the latest version of d0rne ({current_version}).{Style.RESET_ALL}")
-
 def load_config():
     config = configparser.ConfigParser()
     config_path = os.path.join(appdirs.user_config_dir("d0rne"), "config.ini")
@@ -641,7 +591,66 @@ async def run_wget(command, show_progress=False, quiet_mode=False):
     logging.error(f"Command failed with return code {process.returncode}")
     print(f"\n{Fore.RED}Command failed with return code {process.returncode}")
     return False
+    
+async def download_torrent(torrent_path: str, save_path: str = None):
+    if save_path is None:
+        save_path = get_downloads_folder()
+    
+    loader = Loader("Initializing torrent download...", "Torrent download initialized!", 0.1)
+    loader.start()
+    
+    ses = lt.session()
+    params = {
+        'save_path': save_path,
+        'storage_mode': lt.storage_mode_t.storage_mode_sparse,
+    }
+    
+    try:
+        if torrent_path.startswith('magnet:'):
+            atp = lt.parse_magnet_uri(torrent_path)
+            atp.save_path = save_path
+            handle = ses.add_torrent(atp)
+            loader.stop()
+            print(f"{Fore.YELLOW}Downloading metadata...")
+            while not handle.status().has_metadata:
+                await asyncio.sleep(1)
+            print(f"{Fore.GREEN}Got metadata, starting torrent download...")
+        else:
+            info = lt.torrent_info(torrent_path)
+            handle = ses.add_torrent({'ti': info, 'save_path': save_path})
+            loader.stop()
+            print(f"{Fore.GREEN}Torrent loaded, starting download...")
 
+        print(f"{Fore.CYAN}Starting download...")
+        with tqdm(total=100, unit='%') as pbar:
+            while not handle.status().is_seeding:
+                s = handle.status()
+                
+                state_str = ['queued', 'checking', 'downloading metadata', 
+                             'downloading', 'finished', 'seeding', 'allocating']
+                try:
+                    state = state_str[s.state]
+                except IndexError:
+                    state = 'unknown'
+                
+                pbar.update(int(s.progress * 100) - pbar.n)
+                pbar.set_postfix({
+                    'state': state,
+                    'down_speed': f"{s.download_rate / 1000:.1f} kB/s",
+                    'up_speed': f"{s.upload_rate / 1000:.1f} kB/s",
+                    'peers': s.num_peers
+                })
+                
+                await asyncio.sleep(1)
+
+        print(f"\n{Fore.GREEN}Download complete!")
+    except Exception as e:
+        print(f"{Fore.RED}Error downloading torrent: {e}")
+    finally:
+        loader.stop()
+        print(f"{Fore.YELLOW}Cleaning up...")
+        ses.remove_torrent(handle)
+        
 async def interactive_mode():
     print_banner()
     config = load_config()
@@ -716,7 +725,6 @@ async def async_main():
     parser.add_argument("--proxy", help="Set proxy server (e.g., http://proxy:port)")
     parser.add_argument("--limit-rate", help="Limit download speed (e.g., 500k)")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
-    parser.add_argument("--update", action="store_true", help="Update d0rne to the latest version")
     parser.add_argument("--http2", action="store_true", help="Use HTTP/2 for downloads")
     parser.add_argument("--plugin", help="Use a specific plugin for download")
 
@@ -732,12 +740,6 @@ async def async_main():
         args.limit_rate = args.limit_rate or config.get('DEFAULT', 'limit_rate', fallback=None)
 
     try:
-        if args.update:
-            await self_update()
-            return
-
-        await check_for_updates()
-
         if args.url:
             print_banner()
             if args.check:

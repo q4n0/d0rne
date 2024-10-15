@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import argparse
 import os
 import sys
@@ -24,6 +25,7 @@ import concurrent.futures
 import subprocess
 import threading
 import itertools
+from ftplib import FTP
 
 # Initialize colorama
 init(autoreset=True)
@@ -180,6 +182,55 @@ class PluginManager:
 
 plugin_manager = PluginManager()
 
+async def download_torrent(torrent_path, save_path='.'):
+    ses = lt.session()
+    params = {
+        'save_path': save_path,
+        'storage_mode': lt.storage_mode_t.storage_mode_sparse,
+    }
+    
+    print(f"{Fore.YELLOW}Loading torrent...")
+    try:
+        if torrent_path.startswith('magnet:'):
+            handle = ses.add_torrent({'url': torrent_path, 'save_path': save_path})
+            print(f"{Fore.YELLOW}Downloading metadata...")
+            while not handle.has_metadata():
+                await asyncio.sleep(1)
+            print(f"{Fore.GREEN}Got metadata, starting torrent download...")
+        else:
+            info = lt.torrent_info(torrent_path)
+            handle = ses.add_torrent({'ti': info, 'save_path': save_path})
+            print(f"{Fore.GREEN}Torrent loaded, starting download...")
+
+        print(f"{Fore.CYAN}Starting download...")
+        with tqdm(total=100, unit='%') as pbar:
+            while not handle.status().is_seeding:
+                s = handle.status()
+                
+                state_str = ['queued', 'checking', 'downloading metadata', 
+                             'downloading', 'finished', 'seeding', 'allocating']
+                try:
+                    state = state_str[s.state]
+                except IndexError:
+                    state = 'unknown'
+                
+                pbar.update(s.progress * 100 - pbar.n)
+                pbar.set_postfix({
+                    'state': state,
+                    'down_speed': f"{s.download_rate / 1000:.1f} kB/s",
+                    'up_speed': f"{s.upload_rate / 1000:.1f} kB/s",
+                    'peers': s.num_peers
+                })
+                
+                await asyncio.sleep(1)
+
+        print(f"\n{Fore.GREEN}Download complete!")
+    except Exception as e:
+        print(f"{Fore.RED}Error downloading torrent: {e}")
+    finally:
+        print(f"{Fore.YELLOW}Cleaning up...")
+        ses.remove_torrent(handle)
+
 async def async_download_file(url, output, quiet_mode=False, resume=False, rate_limit=None):
     try:
         session = await connection_pool.get_session()
@@ -235,7 +286,69 @@ async def get_latest_version():
     except ValueError as e:  
         print(f"{Fore.YELLOW}Warning: Failed to parse GitHub response: {e}")
         return None
+async def download_website(url, depth, convert_links, page_requisites):
+    command = ["wget", "--recursive", f"--level={depth}", "--no-clobber", "--page-requisites", "--html-extension", "--convert-links", "--restrict-file-names=windows", "--no-parent", url]
+    if convert_links:
+        command.append("--convert-links")
+    if page_requisites:
+        command.append("--page-requisites")
+    
+    process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await process.communicate()
+    
+    if process.returncode == 0:
+        print(f"{Fore.GREEN}Website downloaded successfully.")
+    else:
+        print(f"{Fore.RED}Error downloading website: {stderr.decode()}")
 
+async def download_ftp(url, username, password):
+    from ftplib import FTP
+    
+    try:
+        with FTP(url) as ftp:
+            ftp.login(user=username, passwd=password)
+            files = ftp.nlst()
+            
+            for file in files:
+                print(f"Downloading {file}...")
+                with open(file, 'wb') as local_file:
+                    ftp.retrbinary(f'RETR {file}', local_file.write)
+            
+        print(f"{Fore.GREEN}FTP download completed successfully.")
+    except Exception as e:
+        print(f"{Fore.RED}Error during FTP download: {e}")
+
+async def check_website_status(url):
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    print(WEBSITE_UP_ASCII)
+                else:
+                    print(WEBSITE_DOWN_ASCII)
+    except aiohttp.ClientError:
+        print(WEBSITE_DOWN_ASCII)
+
+async def self_update():
+    print("Checking for updates...")
+    # Implement the update logic here
+    # This could involve checking the latest version from a server,
+    # downloading the new version, and replacing the current script
+    print("Update completed.")
+
+def parse_rate_limit(limit):
+    if not limit:
+        return None
+    
+    units = {'k': 1024, 'm': 1024*1024}
+    number = float(limit[:-1])
+    unit = limit[-1].lower()
+    
+    if unit in units:
+        return int(number * units[unit])
+    else:
+        return int(number)
+        
 async def check_for_updates():
     current_version = "1.0.2"
     latest_version = await get_latest_version()

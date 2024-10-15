@@ -6,7 +6,6 @@ import time
 import re
 import signal
 import logging
-import platform
 import asyncio
 import aiohttp
 import aiofiles
@@ -20,20 +19,25 @@ import appdirs
 from packaging import version
 import configparser
 import importlib.util
-import queue
-import concurrent.futures
 import subprocess
 import threading
 import itertools
 from ftplib import FTP
-import requests
+from typing import Optional, List, Tuple, Any
+
+# Constants
+CURRENT_VERSION = "1.0.3"
+GITHUB_REPO = "q4no/d0rne"
 
 # Initialize colorama
 init(autoreset=True)
 
 # Set up logging
-logging.basicConfig(filename='d0rne.log', level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    filename='d0rne.log',
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 # Constants
 D0RNE_BANNER = f"""{Fore.CYAN}
@@ -85,26 +89,6 @@ class ConnectionPool:
             await self.session.close()
         await self.connector.close()
 
-class RateLimiter:
-    def __init__(self, rate_limit):
-        self.rate_limit = rate_limit
-        self.tokens = rate_limit
-        self.updated_at = time.monotonic()
-        self.lock = asyncio.Lock()
-
-    async def acquire(self, size):
-        async with self.lock:
-            now = time.monotonic()
-            time_passed = now - self.updated_at
-            self.tokens = min(self.rate_limit, self.tokens + time_passed * self.rate_limit)
-            self.updated_at = now
-
-            if size > self.tokens:
-                await asyncio.sleep((size - self.tokens) / self.rate_limit)
-                self.tokens = 0
-            else:
-                self.tokens -= size
-
 class PluginManager:
     def __init__(self):
         self.plugins = {}
@@ -118,6 +102,8 @@ class PluginManager:
 
     def get_plugin(self, plugin_name):
         return self.plugins.get(plugin_name)
+
+plugin_manager = PluginManager()
 
 class Loader:
     def __init__(self, desc="Loading...", end="Done!", timeout=0.1):
@@ -167,47 +153,38 @@ class RateLimiter:
             else:
                 self.tokens -= size
 
-class PluginManager:
-    def __init__(self):
-        self.plugins = {}
-
-    def load_plugin(self, plugin_name):
-        plugin_path = f"plugins/{plugin_name}.py"
-        spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        self.plugins[plugin_name] = module
-
-    def get_plugin(self, plugin_name):
-        return self.plugins.get(plugin_name)
-
-plugin_manager = PluginManager()
-
-async def get_latest_github_version():
-    url = "https://api.github.com/repos/q4no/d0rne/releases/latest"
+async def get_latest_github_version() -> Optional[str]:
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status == 200:
+        try:
+            async with session.get(url) as response:
+                response.raise_for_status()
                 data = await response.json()
                 return data['tag_name']
+        except aiohttp.ClientError as e:
+            logging.error(f"Failed to fetch latest version: {e}")
+        except KeyError:
+            logging.error("Unexpected response format from GitHub API")
     return None
 
-async def check_for_updates():
-    current_version = "1.0.2"  # Update this to match your current version
+async def check_for_updates() -> bool:
     latest_version = await get_latest_github_version()
 
     if latest_version is None:
         print(f"{Fore.YELLOW}Failed to check for updates. Skipping update check.")
         return False
 
-    if version.parse(latest_version) > version.parse(current_version):
+    if version.parse(latest_version) > version.parse(CURRENT_VERSION):
         print(f"{Fore.YELLOW}A new version of d0rne is available!")
-        print(f"{Fore.CYAN}Current version: {current_version}")
+        print(f"{Fore.CYAN}Current version: {CURRENT_VERSION}")
         print(f"{Fore.CYAN}Latest version: {latest_version}")
         return True
     return False
 
-def git_pull():
+def git_pull() -> bool:
+    if not shutil.which("git"):
+        print(f"{Fore.RED}Git is not installed or not in PATH. Cannot perform update.")
+        return False
     try:
         result = subprocess.run(["git", "pull"], capture_output=True, text=True, check=True)
         print(f"{Fore.GREEN}Update successful. Please restart d0rne.")
@@ -217,7 +194,7 @@ def git_pull():
         print(f"Error output: {e.stderr}")
         return False
 
-async def update_prompt():
+async def update_prompt() -> bool:
     update_available = await check_for_updates()
     if update_available:
         choice = input(f"{Fore.YELLOW}Do you want to update now? (y/n): ").lower()
@@ -227,12 +204,7 @@ async def update_prompt():
                 return True
     return False
 
-async def initialize_with_update_check():
-    if await update_prompt():
-        return True  # Exit the program after update
-    return False  # Continue with the program execution
-
-async def download_torrent(torrent_path, save_path='.'):
+async def download_torrent(torrent_path: str, save_path: str = '.') -> None:
     ses = lt.session()
     params = {
         'save_path': save_path,
@@ -290,20 +262,16 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
         file_size = 0
         start_pos = 0
 
-        if resume:
-            if os.path.exists(output):
-                start_pos = os.path.getsize(output)
-                headers['Range'] = f'bytes={start_pos}-'
+        if resume and os.path.exists(output):
+            start_pos = os.path.getsize(output)
+            headers['Range'] = f'bytes={start_pos}-'
 
         async with session.get(url, headers=headers) as response:
             response.raise_for_status()
             file_size = int(response.headers.get('content-length', 0))
 
-            if resume and response.status == 206:
-                mode = 'ab'
-            else:
-                mode = 'wb'
-                start_pos = 0
+            mode = 'ab' if resume and response.status == 206 else 'wb'
+            start_pos = start_pos if mode == 'ab' else 0
 
             limiter = RateLimiter(rate_limit) if rate_limit else None
 
@@ -316,10 +284,21 @@ async def async_download_file(url, output, quiet_mode=False, resume=False, rate_
                         await f.write(chunk)
                         progress_bar.update(len(chunk))
 
-    except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-        print(f"{Fore.RED}Error downloading file: {e}")
-        return False
-    return True
+        print(f"\n{Fore.GREEN}Download completed successfully.")
+        return True
+    except aiohttp.ClientError as e:
+        print(f"{Fore.RED}Network error: {e}")
+        logging.error(f"Network error while downloading {url}: {e}")
+    except asyncio.TimeoutError:
+        print(f"{Fore.RED}Download timed out.")
+        logging.error(f"Timeout while downloading {url}")
+    except IOError as e:
+        print(f"{Fore.RED}File I/O error: {e}")
+        logging.error(f"File I/O error while downloading {url}: {e}")
+    except Exception as e:
+        print(f"{Fore.RED}Unexpected error: {e}")
+        logging.error(f"Unexpected error while downloading {url}: {e}")
+    return False
 
 async def get_latest_version():
     try:
@@ -329,17 +308,17 @@ async def get_latest_version():
                 data = await response.json()
                 if 'tag_name' in data:
                     return data['tag_name']
-                else:
-                    print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
-                    return None
+                print(f"{Fore.YELLOW}Warning: Unable to parse version information from GitHub response.")
+                return None
     except aiohttp.ClientError as e:
         print(f"{Fore.YELLOW}Warning: Failed to check for updates: {e}")
-        return None
     except ValueError as e:  
         print(f"{Fore.YELLOW}Warning: Failed to parse GitHub response: {e}")
-        return None
+    return None
+        
 async def download_website(url, depth, convert_links, page_requisites):
-    command = ["wget", "--recursive", f"--level={depth}", "--no-clobber", "--page-requisites", "--html-extension", "--convert-links", "--restrict-file-names=windows", "--no-parent", url]
+    command = ["wget", "--recursive", f"--level={depth}", "--no-clobber", "--page-requisites", 
+               "--html-extension", "--convert-links", "--restrict-file-names=windows", "--no-parent", url]
     if convert_links:
         command.append("--convert-links")
     if page_requisites:
@@ -354,23 +333,30 @@ async def download_website(url, depth, convert_links, page_requisites):
         print(f"{Fore.RED}Error downloading website: {stderr.decode()}")
 
 async def download_ftp(url, username, password):
-    from ftplib import FTP
-    
-    try:
-        with FTP(url) as ftp:
-            ftp.login(user=username, passwd=password)
-            files = ftp.nlst()
-            
-            for file in files:
-                print(f"Downloading {file}...")
-                with open(file, 'wb') as local_file:
-                    ftp.retrbinary(f'RETR {file}', local_file.write)
-            
-        print(f"{Fore.GREEN}FTP download completed successfully.")
-    except Exception as e:
-        print(f"{Fore.RED}Error during FTP download: {e}")
+    def ftp_download():
+        try:
+            with FTP(url) as ftp:
+                ftp.login(user=username, passwd=password)
+                files = ftp.nlst()
+                
+                for file in files:
+                    print(f"Downloading {file}...")
+                    with open(file, 'wb') as local_file:
+                        ftp.retrbinary(f'RETR {file}', local_file.write)
+                
+            print(f"{Fore.GREEN}FTP download completed successfully.")
+        except Exception as e:
+            print(f"{Fore.RED}Error during FTP download: {e}")
 
-async def check_website_status(url):
+    await asyncio.to_thread(ftp_download)
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                print(WEBSITE_UP_ASCII if response.status == 200 else WEBSITE_DOWN_ASCII)
+    except aiohttp.ClientError:
+        print(WEBSITE_DOWN_ASCII)
+
+async def check_website_status(url: str) -> None:
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url) as response:
@@ -383,10 +369,17 @@ async def check_website_status(url):
 
 async def self_update():
     print("Checking for updates...")
-    # Implement the update logic here
-    # This could involve checking the latest version from a server,
-    # downloading the new version, and replacing the current script
-    print("Update completed.")
+    latest_version = await get_latest_github_version()
+    current_version = "1.0.2"  # Update this to match your current version
+
+    if latest_version and version.parse(latest_version) > version.parse(current_version):
+        print(f"New version {latest_version} available. Updating...")
+        # Implement update logic here
+        # For example, you could download the new version and replace the current script
+        print("Update completed. Please restart d0rne.")
+        return True
+    print("No updates available.")
+    return False
 
 def parse_rate_limit(limit):
     if not limit:
@@ -396,10 +389,7 @@ def parse_rate_limit(limit):
     number = float(limit[:-1])
     unit = limit[-1].lower()
     
-    if unit in units:
-        return int(number * units[unit])
-    else:
-        return int(number)
+    return int(number * units[unit]) if unit in units else int(number)
         
 async def check_for_updates():
     current_version = "1.0.2"
@@ -412,8 +402,8 @@ async def check_for_updates():
     if version.parse(latest_version) > version.parse(current_version):
         print(f"{Fore.YELLOW}┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓")
         print(f"{Fore.YELLOW}┃ {Fore.GREEN}A new version of d0rne is available!              {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Current version: {current_version}                         {Fore.YELLOW}┃")
-        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Latest version: {latest_version}                          {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Current version: {current_version:<8}                   {Fore.YELLOW}┃")
+        print(f"{Fore.YELLOW}┃ {Fore.CYAN}Latest version: {latest_version:<8}                    {Fore.YELLOW}┃")
         print(f"{Fore.YELLOW}┃ {Fore.CYAN}Run 'd0rne.py --update' to update automatically   {Fore.YELLOW}┃")
         print(f"{Fore.YELLOW}┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛{Style.RESET_ALL}")
     else:
@@ -425,9 +415,7 @@ def load_config():
     
     if os.path.exists(config_path):
         config.read(config_path)
-        return config
-    else:
-        return configparser.ConfigParser()
+    return config
 
 def save_config(config):
     config_dir = appdirs.user_config_dir("d0rne")
@@ -435,37 +423,45 @@ def save_config(config):
     config_path = os.path.join(config_dir, "config.ini")
     with open(config_path, 'w') as configfile:
         config.write(configfile)
+        
+def manage_config():
+    config = load_config()
+    print(f"{Fore.CYAN}Current Configuration:")
+    for key, value in config['DEFAULT'].items():
+        print(f"{key}: {value}")
+    
+    print(f"\n{Fore.YELLOW}Enter new values (or press Enter to keep current value)")
+    
+    config['DEFAULT'] = {
+        'output_dir': input(f"Output directory [{config.get('DEFAULT', 'output_dir', fallback='')}]: ").strip() or config.get('DEFAULT', 'output_dir', fallback=''),
+        'user_agent': input(f"User agent [{config.get('DEFAULT', 'user_agent', fallback='')}]: ").strip() or config.get('DEFAULT', 'user_agent', fallback=''),
+        'proxy': input(f"Proxy [{config.get('DEFAULT', 'proxy', fallback='')}]: ").strip() or config.get('DEFAULT', 'proxy', fallback=''),
+        'limit_rate': input(f"Limit rate [{config.get('DEFAULT', 'limit_rate', fallback='')}]: ").strip() or config.get('DEFAULT', 'limit_rate', fallback='')
+    }
+
+    save_config(config)
+    print(f"{Fore.GREEN}Configuration saved successfully.")
 
 def print_banner():
     print(D0RNE_BANNER)
 
 def create_progress_bar(percentage, width=50):
     filled_width = int(width * percentage // 100)
-    bar = '█' * filled_width + '-' * (width - filled_width)
-    return f"[{bar}] {percentage:.1f}%"
+    return f"[{'█' * filled_width}{'-' * (width - filled_width)}] {percentage:.1f}%"
 
 def parse_wget_output(line):
     progress_regex = r'(\d+)%\s+[\w.]+\s+([\d.]+\w)\s+([\d.]+\s*\w)/s(?:\s+eta\s+([\w\s]+))?'
     match = re.search(progress_regex, line)
     if match:
-        percentage = float(match.group(1))
-        downloaded = match.group(2)
-        speed = match.group(3)
-        eta = match.group(4) or "Unknown"
-        return percentage, downloaded, speed, eta
+        return float(match.group(1)), match.group(2), match.group(3), match.group(4) or "Unknown"
     return None
 
 def get_user_input(prompt, default=None):
     user_input = input(f"{Fore.YELLOW}{prompt}{Fore.RESET}")
-    return user_input if user_input else default
+    return user_input or default
 
 def animated_exit():
-    frames = [
-        "Exiting d0rne |",
-        "Exiting d0rne /",
-        "Exiting d0rne -",
-        "Exiting d0rne \\",
-    ]
+    frames = ["Exiting d0rne |", "Exiting d0rne /", "Exiting d0rne -", "Exiting d0rne \\"]
     for _ in range(10):  
         for frame in frames:
             sys.stdout.write(f'\r{Fore.YELLOW}{frame}{Style.RESET_ALL}')
@@ -508,98 +504,31 @@ class Loader:
             self._thread.join()
         print(f"\r{self.end}", flush=True)
 
-def print_banner():
-    print(D0RNE_BANNER)
-
-def create_progress_bar(percentage, width=50):
-    filled_width = int(width * percentage // 100)
-    bar = '█' * filled_width + '-' * (width - filled_width)
-    return f"[{bar}] {percentage:.1f}%"
-
-def parse_wget_output(line):
-    progress_regex = r'(\d+)%\s+[\w.]+\s+([\d.]+\w)\s+([\d.]+\s*\w)/s(?:\s+eta\s+([\w\s]+))?'
-    match = re.search(progress_regex, line)
-    if match:
-        percentage = float(match.group(1))
-        downloaded = match.group(2)
-        speed = match.group(3)
-        eta = match.group(4) or "Unknown"
-        return percentage, downloaded, speed, eta
-    return None
-
-def download_file(url, output, quiet_mode=False):
-    if platform.system() == "Windows":
-        try:
-            response = requests.get(url, stream=True)
-            response.raise_for_status()
-            total_size = int(response.headers.get('content-length', 0))
-            block_size = 1024  # 1 KB
-            with open(output, 'wb') as f, tqdm(
-                desc=output,
-                total=total_size,
-                unit='iB',
-                unit_scale=True,
-                unit_divisor=1024,
-                disable=quiet_mode
-            ) as progress_bar:
-                for data in response.iter_content(block_size):
-                    size = f.write(data)
-                    progress_bar.update(size)
-        except requests.RequestException as e:
-            print(f"{Fore.RED}Error downloading file: {e}")
-            return False
-    else:
-        try:
-            wget_cmd = ["wget", "-O", output, url]
-            if quiet_mode:
-                wget_cmd.append("--quiet")
-            else:
-                wget_cmd.extend(["--progress=bar:force", "--show-progress"])
-            subprocess.run(wget_cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            print(f"{Fore.RED}Error downloading file: {e}")
-            return False
-    return True
-def run_wget(command, show_progress=False, quiet_mode=False):
-    loader = Loader("Preparing download...", "Download preparation complete.")
-    loader.start()
+async def download_file(url, output, quiet_mode=False):
     try:
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-        loader.stop()
-        print(f"{Fore.GREEN}Starting download...")
-
-        with tqdm(total=100, unit="%", bar_format="{l_bar}{bar}| {n:.2f}%", disable=quiet_mode) as pbar:
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
-                    break
-                if output:
-                    progress_info = parse_wget_output(output)
-                    if progress_info:
-                        percentage, downloaded, speed, eta = progress_info
-                        pbar.update(percentage - pbar.n)
-                        pbar.set_postfix({"Downloaded": downloaded, "Speed": speed, "ETA": eta})
-                    if not show_progress or quiet_mode:
-                        logging.info(output.strip())
-
-        rc = process.poll()
-        if rc != 0:
-            logging.error(f"Command failed with return code {rc}")
-            print(f"\n{Fore.RED}Command failed with return code {rc}")
-            return False
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                total_size = int(response.headers.get('content-length', 0))
+                
+                with open(output, 'wb') as f, tqdm(
+                    desc=output,
+                    total=total_size,
+                    unit='iB',
+                    unit_scale=True,
+                    unit_divisor=1024,
+                    disable=quiet_mode
+                ) as progress_bar:
+                    chunk_size = 8192
+                    async for chunk in response.content.iter_chunked(chunk_size):
+                        size = f.write(chunk)
+                        progress_bar.update(size)
         return True
-    except subprocess.CalledProcessError as e:
-        logging.error(f"Error: {e}")
-        print(f"\n{Fore.RED}Error: {e}")
+    except aiohttp.ClientError as e:
+        print(f"{Fore.RED}Error downloading file: {e}")
         return False
-    except KeyboardInterrupt:
-        logging.warning("Download interrupted by user.")
-        print(f"\n{Fore.YELLOW}Download interrupted by user. Exiting...")
-        return False
-    finally:
-        if not loader.done:
-            loader.stop()
-def download_with_retry(url, output=None, resume=False, user_agent=None, retry_attempts=3, retry_delay=5, quiet_mode=False, proxy=None, limit_rate=None):
+
+async def download_with_retry(url, output=None, resume=False, user_agent=None, retry_attempts=3, retry_delay=5, quiet_mode=False, proxy=None, limit_rate=None):
     print(DOWNLOAD_ASCII)
     command = ["wget", "--progress=bar:force"]
     
@@ -620,22 +549,18 @@ def download_with_retry(url, output=None, resume=False, user_agent=None, retry_a
 
     for attempt in range(retry_attempts):
         print(f"{Fore.YELLOW}Download attempt {attempt + 1} of {retry_attempts}")
-        if run_wget(command, show_progress=True, quiet_mode=quiet_mode):
+        if await run_wget(command, show_progress=True, quiet_mode=quiet_mode):
             logging.info(f"Download completed successfully: {url}")
             print(f"\n{Fore.GREEN}Download completed successfully.")
             return True
         if attempt < retry_attempts - 1:
             logging.warning(f"Download failed. Retrying in {retry_delay} seconds...")
             print(f"\n{Fore.RED}Download failed. Retrying in {retry_delay} seconds...")
-            time.sleep(retry_delay)
+            await asyncio.sleep(retry_delay)
     
     logging.error(f"Max retry attempts reached. Download failed: {url}")
     print(f"\n{Fore.RED}Max retry attempts reached. Download failed.")
     return False
-
-def get_user_input(prompt, default=None):
-    user_input = input(f"{Fore.YELLOW}{prompt}{Fore.RESET}")
-    return user_input if user_input else default
 
 def print_menu():
     menu = f"""
@@ -649,6 +574,7 @@ def print_menu():
 {Fore.CYAN}║ {Fore.GREEN}5. Download torrent{Fore.CYAN}                    ║
 {Fore.CYAN}║ {Fore.GREEN}6. Check web status-Is website online?{Fore.CYAN} ║
 {Fore.CYAN}║ {Fore.GREEN}7. Multiple downloads{Fore.CYAN}                  ║
+{Fore.CYAN}║ {Fore.GREEN}8. Manage Configuration{Fore.CYAN}                ║
 {Fore.CYAN}║To quit:Use "CTRL+C" to EXIT tool{Fore.CYAN}       ║
 {Fore.CYAN}╚════════════════════════════════════════╝
 """
@@ -661,14 +587,14 @@ async def multiple_downloads():
         choice = get_user_input("Add a download (y/n) or start processing queue (s): ").lower()
         
         if choice == 'y':
-            url = get_user_input("Enter the URL to download: ")
-            output = get_user_input("Enter output filename (leave blank for default): ")
-            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
-            user_agent = get_user_input("Enter user agent (leave blank for default): ")
-            proxy = get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: ")
-            limit_rate = get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
-            
-            download_queue.append((url, output, resume, user_agent, proxy, limit_rate))
+            download_queue.append((
+                get_user_input("Enter the URL to download: "),
+                get_user_input("Enter output filename (leave blank for default): "),
+                get_user_input("Resume partial download? (y/n): ").lower() == 'y',
+                get_user_input("Enter user agent (leave blank for default): "),
+                get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: "),
+                get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
+            ))
             print(f"{Fore.GREEN}Download added to queue.")
         
         elif choice == 's':
@@ -676,66 +602,101 @@ async def multiple_downloads():
                 print(f"{Fore.YELLOW}Queue is empty. Add some downloads first.")
             else:
                 print(f"{Fore.GREEN}Processing download queue...")
-                for url, output, resume, user_agent, proxy, limit_rate in download_queue:
-                    await download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate)
+                tasks = [asyncio.create_task(
+                    async_download_file(
+                        url, output, quiet_mode=False, 
+                        resume=resume, rate_limit=parse_rate_limit(limit_rate)
+                    )
+                ) for url, output, resume, user_agent, proxy, limit_rate in download_queue]
+                results = await asyncio.gather(*tasks)
+                print(f"{Fore.GREEN}All downloads completed. {sum(results)}/{len(results)} successful.")
                 download_queue.clear()
-                print(f"{Fore.GREEN}All downloads completed.")
             break
         
         elif choice == 'n':
-            if download_queue:
-                confirm = get_user_input("Queue is not empty. Are you sure you want to exit? (y/n): ").lower()
-                if confirm == 'y':
-                    break
-            else:
-                break
+            if download_queue and get_user_input("Queue is not empty. Are you sure you want to exit? (y/n): ").lower() != 'y':
+                continue
+            break
         
         else:
             print(f"{Fore.RED}Invalid choice. Please enter 'y', 'n', or 's'.")
+
+async def run_wget(command, show_progress=False, quiet_mode=False):
+    if not quiet_mode:
+        print(f"{Fore.GREEN}Starting download...")
+
+    process = await asyncio.create_subprocess_exec(
+        *command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE
+    )
+    
+    stdout, stderr = await process.communicate()
+
+    if process.returncode == 0:
+        logging.info(f"Download completed successfully: {command[-1]}")
+        print(f"\n{Fore.GREEN}Download completed successfully.")
+        return True
+    
+    logging.error(f"Command failed with return code {process.returncode}")
+    print(f"\n{Fore.RED}Command failed with return code {process.returncode}")
+    return False
 
 async def interactive_mode():
     print_banner()
     config = load_config()
     while True:
-        print_menu()
-        choice = get_user_input("Enter your choice (1-7): ")
-        
-        if choice == '1':
-            url = get_user_input("Enter the URL to download: ")
-            output = get_user_input("Enter output filename (leave blank for default): ")
-            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
-            user_agent = get_user_input("Enter user agent (leave blank for default): ")
-            proxy = get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: ")
-            limit_rate = get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
-            await download_with_retry(url, output, resume, user_agent, quiet_mode=False, proxy=proxy, limit_rate=limit_rate)
-        elif choice == '2':
-            url = get_user_input("Enter the URL to download: ")
-            output = get_user_input("Enter output filename (leave blank for default): ")
-            resume = get_user_input("Resume partial download? (y/n): ").lower() == 'y'
-            user_agent = get_user_input("Enter user agent (leave blank for default): ")
-            await download_with_retry(url, output, resume, user_agent, quiet_mode=True)
-        elif choice == '3':
-            url = get_user_input("Enter the website URL: ")
-            depth = int(get_user_input("Enter depth (default 1): ", "1"))
-            convert_links = get_user_input("Convert links for offline viewing? (y/n): ").lower() == 'y'
-            page_requisites = get_user_input("Download all page requisites? (y/n): ").lower() == 'y'
-            await download_website(url, depth, convert_links, page_requisites)
-        elif choice == '4':
-            url = get_user_input("Enter the FTP URL: ")
-            username = get_user_input("Enter FTP username (leave blank for anonymous): ")
-            password = get_user_input("Enter FTP password (leave blank if not required): ")
-            await download_ftp(url, username, password)
-        elif choice == '5':
-            torrent_path = get_user_input("Enter the torrent file path or magnet link: ")
-            save_path = get_user_input("Enter the save path (leave blank for current directory): ") or '.'
-            await download_torrent(torrent_path, save_path)
-        elif choice == '6':
-            url = get_user_input("Enter the website URL to check: ")
-            await check_website_status(url)
-        elif choice == '7':
-            await multiple_downloads()
-        else:
-            print(f"{Fore.RED}Invalid choice. Please try again or use CTRL+C to exit.")
+        try:
+            print_menu()
+            choice = get_user_input("Enter your choice (1-8): ")
+            
+            if choice == '1':
+                await download_with_retry(
+                    get_user_input("Enter the URL to download: "),
+                    get_user_input("Enter output filename (leave blank for default): "),
+                    get_user_input("Resume partial download? (y/n): ").lower() == 'y',
+                    get_user_input("Enter user agent (leave blank for default): "),
+                    quiet_mode=False,
+                    proxy=get_user_input("Enter proxy (e.g., http://proxy:port) or leave blank: "),
+                    limit_rate=get_user_input("Enter download speed limit (e.g., 500k) or leave blank: ")
+                )
+            elif choice == '2':
+                await download_with_retry(
+                    get_user_input("Enter the URL to download: "),
+                    get_user_input("Enter output filename (leave blank for default): "),
+                    get_user_input("Resume partial download? (y/n): ").lower() == 'y',
+                    get_user_input("Enter user agent (leave blank for default): "),
+                    quiet_mode=True
+                )
+            elif choice == '3':
+                await download_website(
+                    get_user_input("Enter the website URL: "),
+                    int(get_user_input("Enter depth (default 1): ", "1")),
+                    get_user_input("Convert links for offline viewing? (y/n): ").lower() == 'y',
+                    get_user_input("Download all page requisites? (y/n): ").lower() == 'y'
+                )
+            elif choice == '4':
+                await download_ftp(
+                    get_user_input("Enter the FTP URL: "),
+                    get_user_input("Enter FTP username (leave blank for anonymous): "),
+                    get_user_input("Enter FTP password (leave blank if not required): ")
+                )
+            elif choice == '5':
+                await download_torrent(
+                    get_user_input("Enter the torrent file path or magnet link: "),
+                    get_user_input("Enter the save path (leave blank for current directory): ") or '.'
+                )
+            elif choice == '6':
+                await check_website_status(get_user_input("Enter the website URL to check: "))
+            elif choice == '7':
+                await multiple_downloads()
+            elif choice == '8':
+                manage_config()
+            else:
+                print(f"{Fore.RED}Invalid choice. Please try again or use CTRL+C to exit.")
+        except Exception as e:
+            print(f"{Fore.RED}An error occurred: {e}")
+            logging.error(f"Error in interactive mode: {e}")
 
 async def async_main():
     parser = argparse.ArgumentParser(description="d0rne: Your cli Downloader")
@@ -763,19 +724,20 @@ async def async_main():
 
     if args.no_color:
         init(strip=True, convert=False)
-
     config = load_config()
     if config:
-        if not args.output:
-            args.output = config.get('DEFAULT', 'output_dir', fallback=None)
-        if not args.user_agent:
-            args.user_agent = config.get('DEFAULT', 'user_agent', fallback=None)
-        if not args.proxy:
-            args.proxy = config.get('DEFAULT', 'proxy', fallback=None)
-        if not args.limit_rate:
-            args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
+        args.output = args.output or config.get('DEFAULT', 'output_dir', fallback=None)
+        args.user_agent = args.user_agent or config.get('DEFAULT', 'user_agent', fallback=None)
+        args.proxy = args.proxy or config.get('DEFAULT', 'proxy', fallback=None)
+        args.limit_rate = args.limit_rate or config.get('DEFAULT', 'limit_rate', fallback=None)
 
     try:
+        if args.update:
+            await self_update()
+            return
+
+        await check_for_updates()
+
         if args.url:
             print_banner()
             if args.check:
@@ -794,10 +756,22 @@ async def async_main():
                     await async_download_file(args.url, args.output, args.quiet, args.resume, parse_rate_limit(args.limit_rate))
         else:
             await interactive_mode()
+    except KeyboardInterrupt:
+        print(f"\n{Fore.YELLOW}Operation interrupted by user. Exiting...")
+        logging.info("Operation interrupted by user.")
+    except aiohttp.ClientError as e:
+        print(f"{Fore.RED}Network error: {e}")
+        logging.error(f"Network error: {e}")
+    except Exception as e:
+        print(f"{Fore.RED}An unexpected error occurred: {e}")
+        logging.error(f"An unexpected error occurred: {e}")
     finally:
         await connection_pool.close()
 
-def main():
+def main() -> None:
+    if sys.version_info < (3, 7):
+        print(f"{Fore.RED}Python 3.7 or higher is required to run this script.")
+        sys.exit(1)
     asyncio.run(async_main())
 
 if __name__ == "__main__":

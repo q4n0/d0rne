@@ -26,6 +26,7 @@ import subprocess
 import threading
 import itertools
 from ftplib import FTP
+import requests
 
 # Initialize colorama
 init(autoreset=True)
@@ -68,7 +69,7 @@ class ConnectionPool:
             force_close=force_close,
             enable_cleanup_closed=enable_cleanup_closed
         )
-        self.session = None
+        self.session = None     
 
     async def get_session(self):
         if self.session is None or self.session.closed:
@@ -182,6 +183,55 @@ class PluginManager:
 
 plugin_manager = PluginManager()
 
+async def get_latest_github_version():
+    url = "https://api.github.com/repos/q4no/d0rne/releases/latest"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                data = await response.json()
+                return data['tag_name']
+    return None
+
+async def check_for_updates():
+    current_version = "1.0.2"  # Update this to match your current version
+    latest_version = await get_latest_github_version()
+
+    if latest_version is None:
+        print(f"{Fore.YELLOW}Failed to check for updates. Skipping update check.")
+        return False
+
+    if version.parse(latest_version) > version.parse(current_version):
+        print(f"{Fore.YELLOW}A new version of d0rne is available!")
+        print(f"{Fore.CYAN}Current version: {current_version}")
+        print(f"{Fore.CYAN}Latest version: {latest_version}")
+        return True
+    return False
+
+def git_pull():
+    try:
+        result = subprocess.run(["git", "pull"], capture_output=True, text=True, check=True)
+        print(f"{Fore.GREEN}Update successful. Please restart d0rne.")
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"{Fore.RED}Failed to update: {e}")
+        print(f"Error output: {e.stderr}")
+        return False
+
+async def update_prompt():
+    update_available = await check_for_updates()
+    if update_available:
+        choice = input(f"{Fore.YELLOW}Do you want to update now? (y/n): ").lower()
+        if choice == 'y':
+            if git_pull():
+                print(f"{Fore.GREEN}Update completed. Please restart d0rne.")
+                return True
+    return False
+
+async def initialize_with_update_check():
+    if await update_prompt():
+        return True  # Exit the program after update
+    return False  # Continue with the program execution
+
 async def download_torrent(torrent_path, save_path='.'):
     ses = lt.session()
     params = {
@@ -192,9 +242,11 @@ async def download_torrent(torrent_path, save_path='.'):
     print(f"{Fore.YELLOW}Loading torrent...")
     try:
         if torrent_path.startswith('magnet:'):
-            handle = ses.add_torrent({'url': torrent_path, 'save_path': save_path})
+            atp = lt.parse_magnet_uri(torrent_path)
+            atp.save_path = save_path
+            handle = ses.add_torrent(atp)
             print(f"{Fore.YELLOW}Downloading metadata...")
-            while not handle.has_metadata():
+            while not handle.status().has_metadata:
                 await asyncio.sleep(1)
             print(f"{Fore.GREEN}Got metadata, starting torrent download...")
         else:
@@ -214,7 +266,7 @@ async def download_torrent(torrent_path, save_path='.'):
                 except IndexError:
                     state = 'unknown'
                 
-                pbar.update(s.progress * 100 - pbar.n)
+                pbar.update(int(s.progress * 100) - pbar.n)
                 pbar.set_postfix({
                     'state': state,
                     'down_speed': f"{s.download_rate / 1000:.1f} kB/s",
@@ -709,9 +761,8 @@ async def async_main():
 
     args = parser.parse_args()
 
-    if args.update:
-        await self_update()
-        return
+    if args.no_color:
+        init(strip=True, convert=False)
 
     config = load_config()
     if config:
@@ -723,11 +774,6 @@ async def async_main():
             args.proxy = config.get('DEFAULT', 'proxy', fallback=None)
         if not args.limit_rate:
             args.limit_rate = config.get('DEFAULT', 'limit_rate', fallback=None)
-    
-    if args.no_color:
-        init(strip=True, convert=False)
-    
-    await check_for_updates()
 
     try:
         if args.url:
@@ -750,7 +796,7 @@ async def async_main():
             await interactive_mode()
     finally:
         await connection_pool.close()
-      
+
 def main():
     asyncio.run(async_main())
 

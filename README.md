@@ -181,8 +181,6 @@ Follow the on-screen menu to choose your download option.
 
 # d0rne: Your CLI Downloader
 
-[... previous sections remain the same ...]
-
 ## Configuration
 
 d0rne supports configuration files for setting default options. The configuration file locations are:
